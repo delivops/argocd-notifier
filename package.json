@@ -1,4 +1,44 @@
 {
-  "name": "argocd-watcher-notifier",
+  "name": "@delivops/argocd-watcher-notifier",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "start:prod": "node --env-file=.env dist/index.js",
+    "start:dev": "node --watch --env-file=.env --loader ts-node/esm --no-warnings src/index.ts",
+    "start:debug": "node --watch --inspect --env-file=.env --loader ts-node/esm --no-warnings src/index.ts",
+    "lint": "eslint",
+    "=== utils ===": "=== utils ===",
+    "postinstall": "husky",
+    "prepare": "yarn husky-install; yarn yarn-pnp-ide-fix",
+    "prepack": "pinst --disable",
+    "postpack": "pinst --enable",
+    "husky-install": "node .husky/install.mjs",
+    "yarn-pnp-ide-fix": "yarn dlx @yarnpkg/sdks vscode"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "^0.21.0",
+    "@slack/web-api": "^7.3.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "@types/eslint__js": "^8.42.3",
+    "@types/node": "^22.3.0",
+    "eslint": "^9.9.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "globals": "^15.9.0",
+    "husky": "^9.1.4",
+    "lint-staged": "^15.2.9",
+    "pinst": "^3.0.0",
+    "prettier": "^3.3.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "packageManager": "yarn@4.4.0"
 }
