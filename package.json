@@ -1,0 +1,4 @@
+{
+  "name": "argocd-watcher-notifier",
+  "packageManager": "yarn@4.4.0"
+}
