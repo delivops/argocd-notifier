@@ -29,6 +29,7 @@ lerna-debug.log*
 
 # OS
 .DS_Store
+Thumbs.db
 *.pem
 
 # Tests
@@ -58,6 +59,3 @@ tsconfig.tsbuildinfo
 .env*.local
 *.env
 .env
-
-
-
