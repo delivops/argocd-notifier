@@ -1,7 +1,7 @@
 import { RefinedEventType } from '@/enums/refined-event-type.enum';
 import type { CrdConfig } from '@/interfaces/crd-config.interface';
-import type { MyCustomResource } from '@/interfaces/my-custom-resource.interface';
-import type { MyResourceEvent } from '@/interfaces/my-resource-event.interface';
+import type { CustomResource } from '@/interfaces/custom-resource.interface';
+import type { ResourceEvent } from '@/interfaces/resource-event.interface';
 import { logger } from '@/logger';
 import { getRefinedEventType } from '@/utils/get-refined-event-type';
 import { CustomResourceUtils } from '@/utils/k8s/custom-resource.k8s.utils';
@@ -16,14 +16,12 @@ export abstract class BaseResourceManager {
     protected readonly customResourceUtils = new CustomResourceUtils(k8sCustomObjectsApi),
   ) {}
 
-  public async handleEvent(event: MyResourceEvent): Promise<void> {
+  public async handleEvent(event: ResourceEvent): Promise<void> {
     const refinedEventType = getRefinedEventType(event);
     logger.debug(
       `***** Handle ${refinedEventType} (K8s: ${event.type}) for ${event.object.kind} '${event.object.metadata.name}'`,
     );
-
-    let handler: ((event: MyResourceEvent) => Promise<void>) | undefined;
-
+    let handler: ((event: ResourceEvent) => Promise<void>) | undefined;
     switch (refinedEventType) {
       case RefinedEventType.Added:
         handler = this.handleAddedEvent;
@@ -45,14 +43,18 @@ export abstract class BaseResourceManager {
         logger.dir(event);
         break;
     }
-
-    if (typeof handler === 'function') {
-      await handler.bind(this)(event);
+    try {
+      if (typeof handler === 'function') {
+        logger.debug(`Calling handler for ${refinedEventType} event`);
+        await handler.bind(this)(event);
+      } else {
+        logger.debug(`No handler found for ${refinedEventType} event`);
+      }
+    } finally {
+      logger.debug(
+        `***** Done ${refinedEventType} (K8s: ${event.type}) for ${event.object.kind} '${event.object.metadata.name}'`,
+      );
     }
-
-    logger.debug(
-      `***** Done ${refinedEventType} (K8s: ${event.type}) for ${event.object.kind} '${event.object.metadata.name}'\n`,
-    );
   }
 
   public async syncAll(): Promise<void> {
@@ -61,31 +63,33 @@ export abstract class BaseResourceManager {
     const k8sObjects = await this.customResourceUtils.listCustomResources(this.definition);
 
     for (const object of k8sObjects) {
-      await this.syncResource(object as MyCustomResource);
+      await this.syncResource(object as CustomResource);
     }
   }
 
-  protected async handleAddedEvent(event: MyResourceEvent): Promise<void> {
+  protected async handleAddedEvent(event: ResourceEvent): Promise<void> {
     await this.syncResource(event.object);
   }
 
-  protected async handleModifiedEvent(event: MyResourceEvent): Promise<void> {
+  protected async handleModifiedEvent(event: ResourceEvent): Promise<void> {
     await this.syncResource(event.object);
   }
 
-  protected async handleUpToDateEvent(event: MyResourceEvent): Promise<void> {
+  protected async handleUpToDateEvent(event: ResourceEvent): Promise<void> {
     await this.syncResource(event.object);
   }
 
-  protected async handleDeletingEvent(event: MyResourceEvent): Promise<void> {
+  protected async handleDeletingEvent(event: ResourceEvent): Promise<void> {
     await this.deleteResource(event.object);
   }
 
-  protected async handleDeletedEvent?(event: MyResourceEvent): Promise<void>;
-  protected async deleteDependentResources?(object: MyCustomResource): Promise<boolean>;
+  protected async handleDeletedEvent?(event: ResourceEvent): Promise<void>;
+  protected async deleteDependentResources?(object: CustomResource): Promise<boolean>;
 
-  protected abstract syncResource(object: MyCustomResource): Promise<void>;
-  protected abstract deleteResource(object: MyCustomResource): Promise<void>;
+  protected abstract syncResource(object: CustomResource): Promise<void>;
+  protected async deleteResource(object: CustomResource): Promise<void> {
+    logger.debug(`Deleting ${object.kind} '${object.metadata.name}' is not implemented`);
+  }
 }
 
 export type BaseResourceManagerClass = new (

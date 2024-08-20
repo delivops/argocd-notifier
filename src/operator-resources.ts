@@ -2,7 +2,7 @@ import { ArgoCdApplicationMetadataSchema, ArgoCdNames, type ArgoCdKind } from '.
 import { Scope } from './enums/scope.enum';
 import type { CrdConfig } from './interfaces/crd-config.interface';
 import type { OperatorResource } from './interfaces/operator-resources.interface';
-import { ArgoCdResourceManager } from './resource-manager/client.resource-manager';
+import { ArgoCdApplicationResourceManager } from './resource-manager/argocd-application.resource-manager';
 
 export const operatorResources: OperatorResource[] = [
   {
@@ -11,8 +11,8 @@ export const operatorResources: OperatorResource[] = [
       scope: Scope.Namespaced,
       dto: ArgoCdApplicationMetadataSchema,
     },
-    resourceManagerClass: ArgoCdResourceManager,
-    syncOptions: { cronPattern: '0 * * * *' },
+    resourceManagerClass: ArgoCdApplicationResourceManager,
+    // syncOptions: { cronPattern: '0 * * * *' },
   },
 ];
 

@@ -1,7 +1,7 @@
 import { Scope } from '@/enums/scope.enum';
-import type { MyCustomResource } from '@/interfaces/my-custom-resource.interface';
+import type { CustomResource } from '@/interfaces/custom-resource.interface';
 
-export const getResourceScope = (object: MyCustomResource) => {
+export const getResourceScope = (object: CustomResource) => {
   const scope = object.metadata.namespace ? Scope.Namespaced : Scope.Cluster;
   return scope;
 };

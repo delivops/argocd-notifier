@@ -1,14 +1,16 @@
 import { RefinedEventType } from '@/enums/refined-event-type.enum';
 import { ResourceEventType } from '@/enums/resource-event-type.enum';
-import { MyResourceEvent } from '@/interfaces/my-resource-event.interface';
+import { ResourceEvent } from '@/interfaces/resource-event.interface';
 
-export const getRefinedEventType = (event: MyResourceEvent): RefinedEventType => {
+export const getRefinedEventType = (event: ResourceEvent): RefinedEventType => {
   if (event.type === ResourceEventType.Deleted) {
     return RefinedEventType.Deleted;
   }
 
   const isMarkedForDeletion = event.object.metadata?.deletionTimestamp !== undefined;
-  const isUpToDate = event.object.status?.observedGeneration === event.object.metadata?.generation;
+  const isUpToDate =
+    event.object.status?.observedGeneration !== undefined &&
+    event.object.status.observedGeneration === event.object.metadata?.generation;
 
   if (isMarkedForDeletion) {
     return RefinedEventType.Deleting;

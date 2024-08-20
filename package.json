@@ -6,8 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start:prod": "node -r tsconfig-paths/register dist/index.js",
-    "start:dev": "node --watch --env-file=.env -r tsconfig-paths/register --loader ts-node/esm --no-warnings src/index.ts",
-    "start:debug": "node --watch --inspect --env-file=.env -r tsconfig-paths/register --loader ts-node/esm --no-warnings src/index.ts",
+    "start:dev": "node --watch --env-file=.env -r tsconfig-paths/register --loader @esbuild-kit/esm-loader --no-warnings src/index.ts",
+    "start:debug": "node --watch --inspect --env-file=.env -r tsconfig-paths/register --loader @esbuild-kit/esm-loader --no-warnings src/index.ts",
     "lint": "eslint",
     "=== utils ===": "=== utils ===",
     "postinstall": "husky",
@@ -15,22 +15,29 @@
     "prepack": "pinst --disable",
     "postpack": "pinst --enable",
     "husky-install": "node .husky/install.mjs",
-    "yarn-pnp-ide-fix": "yarn dlx @yarnpkg/sdks vscode"
+    "yarn-pnp-ide-fix": "yarn dlx @yarnpkg/sdks vscode",
+    "=== git ===": "=== git ===",
+    "git-clean-branches": "bash ./scripts/clean-local-orphan-branches.sh",
+    "=== packages ===": "=== packages ===",
+    "packages:update:check": "yarn dlx npm-check-updates",
+    "packages:update:minor": "yarn dlx npm-check-updates -u --target minor",
+    "update-yarn": "yarn set version latest && yarn install",
+    "upgrade-node": "bash ./scripts/upgrade-node-lts-latest.sh",
+    "upgrade-all": "yarn update-yarn && yarn packages:update:minor && yarn upgrade-node"
   },
   "dependencies": {
     "@kubernetes/client-node": "^0.21.0",
     "@slack/web-api": "^7.3.4",
-    "async": "^3.2.5",
     "croner": "^8.1.1",
     "env-var": "^7.5.0",
     "winston": "^3.14.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@esbuild-kit/esm-loader": "^2.6.5",
     "@eslint/js": "^9.9.0",
-    "@types/async": "^3",
     "@types/eslint__js": "^8.42.3",
-    "@types/node": "^22.3.0",
+    "@types/node": "^22.4.1",
     "eslint": "^9.9.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
@@ -39,10 +46,9 @@
     "lint-staged": "^15.2.9",
     "pinst": "^3.0.0",
     "prettier": "^3.3.3",
-    "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.5.4",
-    "typescript-eslint": "^8.1.0"
+    "typescript-eslint": "^8.2.0"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -1,14 +1,17 @@
 import { ResourceEventType } from '@/enums/resource-event-type.enum';
+import type { CustomResource } from '@/interfaces/custom-resource.interface';
 import type { Logger } from '@/interfaces/logger.interface';
-import type { MyCustomResource } from '@/interfaces/my-custom-resource.interface';
-import type { MyResourceEvent } from '@/interfaces/my-resource-event.interface';
+import type { ResourceEvent } from '@/interfaces/resource-event.interface';
 import { KubeConfig, Watch } from '@kubernetes/client-node';
-import Async from 'async';
-import { DEFAULT_BACK_OFF_FACTOR, DEFAULT_MAX_RESTART_TIMEOUT, DEFAULT_RESTART_TIMEOUT } from './config';
+import {
+  DEFAULT_BACK_OFF_FACTOR,
+  DEFAULT_MAX_RESTART_TIMEOUT,
+  DEFAULT_RESTART_TIMEOUT,
+} from '../config/operator.config';
 
-type OnEventCallback = (event: MyResourceEvent) => Promise<void> | void;
+type OnEventCallback = (event: ResourceEvent) => Promise<void> | void;
 type OnFailCallback = (err: unknown) => Promise<void> | void;
-type EventQueueObject = { event: MyResourceEvent; onEvent: OnEventCallback };
+type EventQueueObject = { event: ResourceEvent; onEvent: OnEventCallback };
 
 const silentLogger: Logger = {
   debug: () => {},
@@ -21,7 +24,8 @@ export abstract class CustomResourceOperator {
   private readonly kubeConfig: KubeConfig;
 
   private readonly abortControllers: AbortController[] = [];
-  private readonly eventQueue: Async.QueueObject<EventQueueObject>;
+  private readonly eventQueue: EventQueueObject[] = [];
+  private isProcessingQueue = false;
 
   constructor(
     protected readonly logger: Logger = silentLogger,
@@ -31,8 +35,6 @@ export abstract class CustomResourceOperator {
   ) {
     this.kubeConfig = new KubeConfig();
     this.kubeConfig.loadFromDefault();
-
-    this.eventQueue = Async.queue((args) => args.onEvent(args.event));
   }
 
   public async start(): Promise<void> {
@@ -49,7 +51,8 @@ export abstract class CustomResourceOperator {
     this.logger.info('Stopping the operator...');
     this.abortControllers.forEach((controller) => controller.abort());
     this.abortControllers.length = 0; // Clear the array
-    this.eventQueue.kill();
+    this.eventQueue.length = 0; // Clear the event queue
+    this.isProcessingQueue = false;
   }
 
   // *
@@ -90,7 +93,12 @@ export abstract class CustomResourceOperator {
         this.logger.warn(`Unknown event type '${phase}' received`);
         return;
       }
-      await this.eventQueue.push({ event: { type, object: apiObj as MyCustomResource }, onEvent });
+
+      this.logger.debug(
+        `Received ${type} event for ${(apiObj as CustomResource).kind} '${(apiObj as CustomResource).metadata.name}'`,
+      );
+
+      void this.enqueueEvent({ event: { type, object: apiObj as CustomResource }, onEvent });
     };
 
     let restartDelay = this.restartTimeout;
@@ -105,19 +113,39 @@ export abstract class CustomResourceOperator {
       restartDelay = Math.min(restartDelay * this.backOffFactor, this.maxRestartTimeout); // Exponential backoff with a maximum timeout
     };
 
-    const restartWatch = async () => {
+    const restartWatch = async ({ start }: { start?: boolean } = {}) => {
       try {
         const abortController = new AbortController();
         await watcher.watch(path, { signal: abortController.signal }, onWatchEvent, onWatchError);
         this.abortControllers.push(abortController);
 
-        this.logger.info(`Watching resource '${resourceId}' in ${scope}...`);
+        this.logger.info(`${start ? '' : '(restart) '}Watching resource '${resourceId}' in ${scope}...`);
       } catch (err) {
         this.logger.error(`Failed to (re)start watch for '${resourceId}' in ${scope}:`, err);
         await onWatchError();
       }
     };
 
-    await restartWatch();
+    await restartWatch({ start: true });
+  }
+
+  private enqueueEvent(eventObj: EventQueueObject): void {
+    this.eventQueue.push(eventObj);
+    if (!this.isProcessingQueue) {
+      void this.processQueue();
+    }
+  }
+
+  private async processQueue(): Promise<void> {
+    this.isProcessingQueue = true;
+    while (this.eventQueue.length > 0) {
+      const { event, onEvent } = this.eventQueue.shift()!;
+      try {
+        await onEvent(event);
+      } catch (err) {
+        this.logger.error(`Error processing event: ${JSON.stringify(err, null, 2)}`);
+      }
+    }
+    this.isProcessingQueue = false;
   }
 }

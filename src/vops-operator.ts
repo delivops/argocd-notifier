@@ -1,13 +1,13 @@
 import { CoreV1Api, CustomObjectsApi, KubeConfig } from '@kubernetes/client-node';
 import { ActionOnInvalid } from '@kubernetes/client-node/dist/config_types';
 import Cron, { type CronOptions } from 'croner';
-import { config } from './config/operator.config';
+import { argo_config } from './config/argo.config';
 import { CustomResourceOperator } from './custom-resource-operator/custom-resource-operator';
 import type { ArgoCdKind } from './dtos/argocd-application.dto';
 import { Scope } from './enums/scope.enum';
 import type { Logger } from './interfaces/logger.interface';
-import type { MyResourceEvent } from './interfaces/my-resource-event.interface';
 import type { OperatorResource } from './interfaces/operator-resources.interface';
+import type { ResourceEvent } from './interfaces/resource-event.interface';
 import { logger } from './logger';
 import type { BaseResourceManager } from './resource-manager/base.resource-manager';
 
@@ -41,7 +41,7 @@ export class VopsOperator extends CustomResourceOperator {
 
   protected async setupResource(resource: OperatorResource) {
     const { kind, kindPlural } = resource.crdConfig.names;
-    const namespace = resource.crdConfig.scope === Scope.Namespaced ? config.namespace : undefined;
+    const namespace = resource.crdConfig.scope === Scope.Namespaced ? argo_config.namespace : undefined;
 
     this.logger.debug(`Setting up '${kind}' manager and watchers...`);
 
@@ -59,8 +59,8 @@ export class VopsOperator extends CustomResourceOperator {
     this.logger.info(`Starting watch on '${kindPlural}' in ${namespace ? `namespace '${namespace}'` : 'cluster'}`);
     try {
       await this.watchResource(
-        config.group,
-        config.version,
+        argo_config.group,
+        argo_config.version,
         kindPlural,
         this.handleEvent.bind(this),
         async (err: unknown) => await this.handleWatchError.bind(this)(resource, err),
@@ -72,7 +72,13 @@ export class VopsOperator extends CustomResourceOperator {
   }
 
   private setupResourceCronJob(resource: OperatorResource, kind: typeof ArgoCdKind) {
-    const { cronPattern } = resource.syncOptions;
+    const { cronPattern } = resource.syncOptions || {};
+
+    if (!cronPattern) {
+      logger.debug(`No cron pattern found for '${kind}'`);
+      return;
+    }
+
     const cronOptions: Partial<CronOptions> = {
       name: kind,
       protect: true,
@@ -94,13 +100,14 @@ export class VopsOperator extends CustomResourceOperator {
     }
   }
 
-  private async handleEvent(event: MyResourceEvent) {
+  private async handleEvent(event: ResourceEvent) {
     const resourceManager = this.resourceManagers[event.object.kind];
     if (!resourceManager) {
       logger.error(`Resource manager for '${event.object.kind}' not found`);
       return;
     }
     try {
+      logger.debug(`Handling ${event.type} event for ${event.object.kind} '${event.object.metadata.name}'`);
       await resourceManager.handleEvent(event);
     } catch (err) {
       const error = err as { body: unknown };

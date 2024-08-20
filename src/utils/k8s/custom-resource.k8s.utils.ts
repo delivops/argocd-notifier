@@ -1,4 +1,4 @@
-import { config } from '@/config/operator.config';
+import { argo_config } from '@/config/argo.config';
 import { Scope } from '@/enums/scope.enum';
 import type { CrdConfig } from '@/interfaces/crd-config.interface';
 import type { K8sListResponseBody, K8sResponseObject } from '@/interfaces/custom-object-body.interface';
@@ -20,9 +20,9 @@ export class CustomResourceUtils {
     let args: Parameters<typeof apiMethod>;
 
     args = [
-      config.group, // group: string,
-      config.version, // version: string,
-      config.namespace, // namespace?: string,
+      argo_config.group, // group: string,
+      argo_config.version, // version: string,
+      argo_config.namespace, // namespace?: string,
       plural, // plural: string,
       // pretty?: string, allowWatchBookmarks?: boolean, _continue?: string, fieldSelector?: string, labelSelector?: string,
       // limit?: number, resourceVersion?: string, resourceVersionMatch?: string, timeoutSeconds?: number, watch?: boolean, options?: {},
@@ -66,8 +66,8 @@ export class CustomResourceUtils {
     let args: Parameters<typeof apiMethod>;
 
     args = [
-      config.group, // group: string,
-      config.version, // version: string,
+      argo_config.group, // group: string,
+      argo_config.version, // version: string,
       namespace || '', // namespace?: string,
       plural, // plural: string,
       metadataName, // name: string,

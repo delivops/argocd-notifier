@@ -11,16 +11,15 @@ export const ArgoCdNames = {
 
 export const ArgoCdApplicationMetadataSchema = z
   .object({
+    name: z.string().min(1),
+    namespace: z.string().min(1),
+    annotations: z.record(z.string().min(1)).optional(),
     labels: z
       .object({
         'argocd.argoproj.io/instance': z.string().min(1).optional(),
       })
-      // .passthrough(), // modifies type to Record<string, unknown>
+      .passthrough()
       .optional(),
-    name: z.string().min(1),
-    namespace: z.string().min(1),
-    annotations: z.record(z.string().min(1)).optional(),
-    managedFields: z.array(z.object({}).passthrough()).optional(),
   })
   .passthrough();
 
