@@ -19,6 +19,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     {
       status?: Exclude<ArgoCdResource['status'], undefined>['health']['status'];
       sync?: Exclude<ArgoCdResource['status'], undefined>['sync']['status'];
+      lastMessageTs?: string;
     }
   > = new Map();
 
@@ -26,43 +27,49 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     const { kind, status, metadata } = object;
     const { name } = metadata;
 
-    let hasBeenUpdated = false;
-
-    if (!this.resourceCacheMap.has(name)) {
-      logger.debug(`Initializing cache for ${kind} '${name}'`);
-
-      this.resourceCacheMap.set(name, {
-        status: status?.health.status,
-        sync: status?.sync.status,
-      });
-    } else {
-      const prevStatus = this.resourceCacheMap.get(name)?.status;
-      const prevSync = this.resourceCacheMap.get(name)?.sync;
-
-      if (prevStatus !== status?.health.status || prevSync !== status?.sync.status) {
-        hasBeenUpdated = true;
-      } else {
-        logger.debug(`Status for ${kind} '${name}' is already up-to-date`);
-      }
+    if (this.shouldIgnoreResource(object)) {
+      logger.debug(`Ignoring ${kind} '${name}' as it is a directory source`);
+      return;
     }
 
-    if (hasBeenUpdated) {
-      logger.info(`Sending notification for ${kind} '${name}'`);
+    const currentStatus = status?.health.status;
+    const currentSync = status?.sync.status;
 
-      const prevStatus = this.resourceCacheMap.get(name)?.status;
-      const prevSync = this.resourceCacheMap.get(name)?.sync;
+    const cachedResource = this.resourceCacheMap.get(name);
+    const prevStatus = cachedResource?.status;
+    const prevSync = cachedResource?.sync;
 
+    const isLastHealthUpdated =
+      prevSync === currentSync &&
+      ((prevStatus === ArgoCdHealthStatus.Progressing && currentStatus !== prevStatus) ||
+        currentStatus === ArgoCdHealthStatus.Degraded);
+
+    if (!cachedResource) {
+      logger.debug(`Initializing cache for ${kind} '${name}'`);
+      this.resourceCacheMap.set(name, { status: currentStatus, sync: currentSync });
+    } else if (prevSync !== currentSync || isLastHealthUpdated) {
       logger.info(
-        `Updated status for ${kind} '${name}': status: ${prevStatus} -> ${status?.health.status} / syncStatus ${prevSync} -> ${status?.sync.status}`,
+        `Updated status for ${kind} '${name}': syncStatus: ${prevSync} -> ${currentSync} / status: ${prevStatus} -> ${currentStatus}`,
       );
 
       this.resourceCacheMap.set(name, {
-        ...this.resourceCacheMap.get(name),
-        status: status?.health.status,
-        sync: status?.sync.status,
+        ...cachedResource,
+        status: currentStatus,
+        sync: currentSync,
       });
 
-      await this.sendNotification(name, prevStatus, status?.health.status, prevSync, status?.sync.status);
+      logger.info(`Sending notification for ${kind} '${name}'`);
+
+      await this.sendNotification(name, prevStatus, currentStatus, prevSync, currentSync, cachedResource.lastMessageTs);
+
+      if (isLastHealthUpdated) {
+        this.resourceCacheMap.set(name, {
+          ...this.resourceCacheMap.get(name),
+          lastMessageTs: undefined,
+        });
+      }
+    } else {
+      logger.debug(`Status for ${kind} '${name}' is already up-to-date`);
     }
   }
 
@@ -72,6 +79,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     newStatus: string | undefined,
     prevSync: string | undefined,
     newSync: string | undefined,
+    lastMessageTs?: string,
   ): Promise<void> {
     try {
       const statusEmoji = this.getStatusEmoji(newStatus);
@@ -79,18 +87,12 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
       const blocks = [
         {
-          type: 'context',
-          elements: [
-            {
-              type: 'image',
-              image_url: 'https://argo-cd.readthedocs.io/en/stable/assets/logo.png',
-              alt_text: 'argocd',
-            },
-            {
-              type: 'mrkdwn',
-              text: `*Argo CD Application Updated* (${name})`,
-            },
-          ],
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: `Argo CD Application Updated (${name})`,
+            emoji: true,
+          },
         },
         {
           type: 'section',
@@ -113,11 +115,23 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
       const altText = `*Argo CD Application Updated*\n*Application:* ${name}\n*Health Status:* ${prevStatus} -> ${newStatus}\n*Sync Status:* ${prevSync} -> ${newSync}`;
 
-      await this.slackClient.chat.postMessage({
-        text: altText,
-        blocks,
-        channel: process.env.SLACK_CHANNEL_ID!,
-      });
+      if (lastMessageTs) {
+        await this.slackClient.chat.update({
+          text: altText,
+          blocks,
+          channel: process.env.SLACK_CHANNEL_ID!,
+          ts: lastMessageTs,
+        });
+      } else {
+        const res = await this.slackClient.chat.postMessage({
+          icon_url: 'https://argo-cd.readthedocs.io/en/stable/assets/logo.png',
+          text: altText,
+          blocks,
+          channel: process.env.SLACK_CHANNEL_ID!,
+        });
+
+        this.resourceCacheMap.set(name, { ...this.resourceCacheMap.get(name), lastMessageTs: res.ts });
+      }
 
       logger.info(`Notification sent to Slack for ${name}`);
     } catch (error) {
@@ -142,5 +156,10 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       default:
         return '';
     }
+  }
+
+  private shouldIgnoreResource(object: ArgoCdResource): boolean {
+    const { spec } = object;
+    return !!spec.source.directory;
   }
 }
