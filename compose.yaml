@@ -1,0 +1,9 @@
+name: argcd-watcher-notifier
+
+services:
+  argcd-watcher-notifier:
+    build:
+      context: '.'
+      dockerfile: 'Dockerfile'
+    env_file:
+      - '.env'

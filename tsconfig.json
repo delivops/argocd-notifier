@@ -1,29 +1,25 @@
 {
   "compilerOptions": {
-    "module": "ES2022",
-    "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
+    "module": "NodeNext",
     "lib": ["ESNext", "dom"],
-    "declaration": true,
+    "declaration": false,
     "removeComments": true,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "ESNext",
     "sourceMap": true,
+    "rootDir": "./src",
     "outDir": "./dist",
-    "baseUrl": "./",
-    "sourceRoot": "./src",
-    "incremental": true,
+    "baseUrl": ".",
     "skipLibCheck": true,
     "strict": true,
     "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "moduleResolution": "NodeNext",
     "noImplicitAny": false,
     "preserveSymlinks": true,
     "paths": { "@/*": ["src/*"] }
   },
-  "include": ["src/**/*"],
+  "include": ["./src/**/*"],
   "exclude": ["node_modules", "dist"], // add "test", "**/*.spec.ts" for build
   "ts-node": {
     // It is faster to skip typechecking.
