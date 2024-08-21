@@ -35,3 +35,13 @@ jobs:
     with:
       image_name: argocd-watcher-notifier
       tag: ${{needs.bump-version.outputs.new_tag}},latest
+
+  gitops-deploy:
+    uses: delivops/workflows/.github/workflows/deploy-service.yaml@main
+    needs: [bump-version, publish]
+    secrets: inherit
+    with:
+      applications: argocd-watcher-notifier
+      cluster_name: prod
+      project: vops
+      tag: ${{needs.bump-version.outputs.new_tag}}
