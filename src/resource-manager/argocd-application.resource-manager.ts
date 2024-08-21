@@ -1,4 +1,4 @@
-import { slack_config } from '@/config/slack.config';
+import { slack_config } from '@/config/app.config';
 import { ArgoCdKind, type ArgoCdApplicationDto } from '@/dtos/argocd-application.dto';
 import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '@/enums/argocd.enum';
 import type { CustomResource } from '@/interfaces/custom-resource.interface';

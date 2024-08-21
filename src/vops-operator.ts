@@ -1,7 +1,7 @@
 import { CoreV1Api, CustomObjectsApi, KubeConfig } from '@kubernetes/client-node';
 import { ActionOnInvalid } from '@kubernetes/client-node/dist/config_types';
 import Cron, { type CronOptions } from 'croner';
-import { argo_config } from './config/argo.config';
+import { argo_config } from './config/app.config';
 import { CustomResourceOperator } from './custom-resource-operator/custom-resource-operator';
 import type { ArgoCdKind } from './dtos/argocd-application.dto';
 import { Scope } from './enums/scope.enum';

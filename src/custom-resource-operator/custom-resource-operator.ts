@@ -53,6 +53,7 @@ export abstract class CustomResourceOperator {
     this.abortControllers.length = 0; // Clear the array
     this.eventQueue.length = 0; // Clear the event queue
     this.isProcessingQueue = false;
+    this.logger.info('Operator stopped.');
   }
 
   // *

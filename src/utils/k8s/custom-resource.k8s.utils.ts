@@ -1,4 +1,4 @@
-import { argo_config } from '@/config/argo.config';
+import { argo_config } from '@/config/app.config';
 import { Scope } from '@/enums/scope.enum';
 import type { CrdConfig } from '@/interfaces/crd-config.interface';
 import type { K8sListResponseBody, K8sResponseObject } from '@/interfaces/custom-object-body.interface';

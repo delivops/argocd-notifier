@@ -1,4 +1,4 @@
-import { argo_config } from '@/config/argo.config';
+import { argo_config } from '@/config/app.config';
 import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '@/enums/argocd.enum';
 import { z } from 'zod';
 
