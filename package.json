@@ -18,7 +18,7 @@
     "=== git ===": "=== git ===",
     "git-clean-branches": "bash ./scripts/clean-local-orphan-branches.sh",
     "=== docker ===": "=== docker ===",
-    "docker:compose:up": "docker compose up -d --build --force-recreate argcd-watcher-notifier && docker compose logs -f argcd-watcher-notifier",
+    "docker:compose:up": "docker compose up -d --build --force-recreate argocd-watcher-notifier && docker compose logs -f argocd-watcher-notifier",
     "docker:compose:down": "docker compose down",
     "=== packages ===": "=== packages ===",
     "packages:update:check": "yarn dlx npm-check-updates",
