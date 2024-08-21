@@ -81,7 +81,8 @@ check_changes() {
 
 call_app_push() {
     local app_name=$1
-    local dockerfile_path=$2
+    local app_path=$2
+    local dockerfile_path=$3
 
     # Determine the image name based on whether AWS_SERVER is set
     if [ -n "$AWS_SERVER" ]; then
@@ -90,7 +91,7 @@ call_app_push() {
         local image_name="$app_name:$CUSTOM_LABEL"
     fi
 
-    if check_changes . "$dockerfile_path" || [ "$FORCE_BUILD" = "true" ]; then
+    if check_changes "$app_path" "$dockerfile_path" || [ "$FORCE_BUILD" = "true" ]; then
         docker build -t $image_name -f $dockerfile_path .
         if $PUSH_TO_AWS = "true"; then
             docker push $image_name
@@ -98,4 +99,4 @@ call_app_push() {
     fi
 }
 
-call_app_push "argocd-watcher-notifier" "Dockerfile"
+call_app_push "argocd-watcher-notifier" "./" "Dockerfile"
