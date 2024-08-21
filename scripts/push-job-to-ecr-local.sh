@@ -81,7 +81,7 @@ check_changes() {
 
 call_app_push() {
     local app_name=$1
-    local dockerfile_path="Dockerfile"
+    local dockerfile_path=$2
 
     # Determine the image name based on whether AWS_SERVER is set
     if [ -n "$AWS_SERVER" ]; then
@@ -98,4 +98,4 @@ call_app_push() {
     fi
 }
 
-call_app_push "argocd-watcher-notifier"
+call_app_push "argocd-watcher-notifier" "Dockerfile"
