@@ -1,7 +1,8 @@
+import { argo_config } from '@/config/argo.config';
 import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '@/enums/argocd.enum';
 import { z } from 'zod';
 
-export const ArgoCdApiVersion = 'argoproj.io/v1alpha1' as const;
+export const ArgoCdApiVersion = `${argo_config.group}/${argo_config.version}` as const;
 export const ArgoCdKind = 'Application' as const;
 
 export const ArgoCdNames = {

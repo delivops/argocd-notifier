@@ -1,6 +1,7 @@
 {
   "name": "@delivops/argocd-watcher-notifier",
   "version": "0.0.1",
+  "type": "commonjs",
   "license": "MIT",
   "scripts": {
     "build": "tsc --build --force",

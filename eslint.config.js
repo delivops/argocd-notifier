@@ -1,10 +1,11 @@
-import js from '@eslint/js';
-// import eslintPluginPrettier from 'eslint-plugin-prettier';
-import globals from 'globals';
-import tsEslint from 'typescript-eslint';
+// eslint-disable-file @typescript-eslint/no-var-requires
+const js = require('@eslint/js');
+const eslintPluginPrettier = require('eslint-plugin-prettier/recommended');
+const globals = require('globals');
+const tsEslint = require('typescript-eslint');
 
 /** @type { import("eslint").Linter.Config[] } */
-export default [
+module.exports = [
   js.configs.recommended,
 
   {
@@ -41,7 +42,7 @@ export default [
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
-      // 'prettier/prettier': 'error',
+      'prettier/prettier': 'error',
       'no-console': 'warn',
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': [
@@ -59,7 +60,7 @@ export default [
 
   {
     ignores: [
-      '*.{mjs,cjs}',
+      '*.{mjs,cjs,js}',
       '.husky/*',
       '.yarn/*',
       '**/node_modules/**',
@@ -70,5 +71,5 @@ export default [
     ],
   },
 
-  // eslintPluginPrettier.configs.recommended,
+  eslintPluginPrettier,
 ];
