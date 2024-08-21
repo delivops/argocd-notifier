@@ -92,9 +92,11 @@ call_app_push() {
     fi
 
     if check_changes "$app_path" "$dockerfile_path" || [ "$FORCE_BUILD" = "true" ]; then
-        docker build -t $image_name -f $dockerfile_path .
         if $PUSH_TO_AWS = "true"; then
+            docker build --platform linux/amd64 --tag $image_name -f $dockerfile_path .
             docker push $image_name
+        else
+            docker build --tag $image_name -f $dockerfile_path .
         fi
     fi
 }
