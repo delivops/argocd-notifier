@@ -30,7 +30,21 @@ export const ArgoCdApplicationSpecSourceSchema = z
     repoURL: z.string().min(1),
     path: z.string().min(1).optional(),
     targetRevision: z.string().min(1),
-    helm: z.object({ valuesObject: z.record(z.unknown()).optional() }).optional(),
+    helm: z
+      .object({
+        valuesObject: z
+          .object({
+            image: z
+              .object({
+                tag: z.string().min(1),
+              })
+              .passthrough()
+              .optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .optional(),
     directory: z.object({ recurse: z.boolean().optional() }).passthrough().optional(),
   })
   .passthrough();
