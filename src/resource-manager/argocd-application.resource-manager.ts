@@ -48,16 +48,21 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
     if (!cachedResource) {
       logger.debug(`Initializing cache for ${kind} '${name}'`);
-      this.resourceCacheMap.set(name, { status: currentStatus, sync: currentSync });
+      this.resourceCacheMap.set(name, {
+        status: currentStatus,
+        sync: currentSync,
+        version: currentVersion,
+      });
     } else if (prevSync !== currentSync || isLastHealthUpdated) {
       logger.info(
-        `Updated status for ${kind} '${name}': syncStatus: ${prevSync} -> ${currentSync} / status: ${prevStatus} -> ${currentStatus}`,
+        `Updated status for ${kind} '${name}': syncStatus: ${prevSync} -> ${currentSync} / status: ${prevStatus} -> ${currentStatus} / version: ${prevVersion} -> ${currentVersion}`,
       );
 
       this.resourceCacheMap.set(name, {
         ...cachedResource,
         status: currentStatus,
         sync: currentSync,
+        version: currentVersion,
       });
 
       logger.info(`Sending notification for ${kind} '${name}'`);
@@ -103,7 +108,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
           type: 'header',
           text: {
             type: 'plain_text',
-            text: `Argo CD Application Updated (${name})`,
+            text: `Argo CD Application Updated: ${name}`,
             emoji: true,
           },
         },
@@ -116,21 +121,24 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
             },
             {
               type: 'mrkdwn',
-              text: `*Version:* ${prevVersion !== newVersion ? `${prevVersion || 'unknown'} → *${newVersion || 'unknown'}*` : `${newVersion || 'unknown'}`}`,
+              text: `*Health Status:* ${prevStatus !== newStatus ? `\n${statusEmoji} ${prevStatus} → *${newStatus}*` : `${statusEmoji} ${newStatus}`}`,
             },
             {
               type: 'mrkdwn',
-              text: `*Health Status:* ${prevStatus !== newStatus ? `${statusEmoji} ${prevStatus} → *${newStatus}*` : `${statusEmoji} ${newStatus}`}`,
+              text: `*Version:* ${prevVersion !== newVersion ? `\n${prevVersion || '?'} → *${newVersion || '?'}*` : `${newVersion || '?'}`}`,
             },
             {
               type: 'mrkdwn',
-              text: `*Sync Status:* ${prevSync !== newSync ? `${syncEmoji} ${prevSync} → *${newSync}*` : `${syncEmoji} ${newSync}`}`,
+              text: `*Sync Status:* ${prevSync !== newSync ? `\n${syncEmoji} ${prevSync} → *${newSync}*` : `${syncEmoji} ${newSync}`}`,
             },
           ],
         },
+        {
+          type: 'divider',
+        },
       ];
 
-      const altText = `*Argo CD Application Updated*\n*Application:* ${name}\n*Health Status:* ${prevStatus} -> ${newStatus}\n*Sync Status:* ${prevSync} -> ${newSync}`;
+      const altText = `*Argo CD Application Updated*\n*Application:* ${name}\n*Health Status:* ${prevStatus} -> ${newStatus}\n*Sync Status:* ${prevSync} -> ${newSync}\n*Version:* ${prevVersion} -> ${newVersion}`;
 
       if (lastMessageTs) {
         await this.slackClient.chat.update({
