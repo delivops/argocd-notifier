@@ -121,11 +121,11 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
             },
             {
               type: 'mrkdwn',
-              text: `*Health Status:* ${prevStatus !== newStatus ? `\n${statusEmoji} ${prevStatus} → *${newStatus}*` : `${statusEmoji} ${newStatus}`}`,
+              text: `*Version:* ${prevVersion !== newVersion ? `\n${prevVersion || '?'} → *${newVersion || '?'}*` : `${newVersion || '?'}`}`,
             },
             {
               type: 'mrkdwn',
-              text: `*Version:* ${prevVersion !== newVersion ? `\n${prevVersion || '?'} → *${newVersion || '?'}*` : `${newVersion || '?'}`}`,
+              text: `*Health Status:* ${prevStatus !== newStatus ? `\n${statusEmoji} ${prevStatus} → *${newStatus}*` : `${statusEmoji} ${newStatus}`}`,
             },
             {
               type: 'mrkdwn',
