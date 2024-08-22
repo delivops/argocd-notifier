@@ -43,5 +43,5 @@ jobs:
     with:
       applications: argocd-watcher-notifier
       cluster_name: prod
-      project: vops
+      project: argocd
       tag: ${{needs.bump-version.outputs.new_tag}}
