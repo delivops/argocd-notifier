@@ -19,25 +19,27 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     {
       status?: Exclude<ArgoCdResource['status'], undefined>['health']['status'];
       sync?: Exclude<ArgoCdResource['status'], undefined>['sync']['status'];
+      version?: string | undefined;
       lastMessageTs?: string;
     }
   > = new Map();
 
   protected async syncResource(object: ArgoCdResource): Promise<void> {
-    const { kind, status, metadata } = object;
+    const { kind, status, metadata, spec } = object;
     const { name } = metadata;
 
     if (this.shouldIgnoreResource(object)) {
-      logger.debug(`Ignoring ${kind} '${name}' as it is a directory source`);
       return;
     }
 
     const currentStatus = status?.health.status;
     const currentSync = status?.sync.status;
+    const currentVersion = spec.source.helm?.valuesObject?.image?.tag;
 
     const cachedResource = this.resourceCacheMap.get(name);
     const prevStatus = cachedResource?.status;
     const prevSync = cachedResource?.sync;
+    const prevVersion = cachedResource?.version;
 
     const isLastHealthUpdated =
       prevSync === currentSync &&
@@ -60,7 +62,16 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
       logger.info(`Sending notification for ${kind} '${name}'`);
 
-      await this.sendNotification(name, prevStatus, currentStatus, prevSync, currentSync, cachedResource.lastMessageTs);
+      await this.sendNotification(
+        name,
+        prevStatus,
+        currentStatus,
+        prevSync,
+        currentSync,
+        prevVersion,
+        currentVersion,
+        cachedResource.lastMessageTs,
+      );
 
       if (isLastHealthUpdated) {
         this.resourceCacheMap.set(name, {
@@ -79,6 +90,8 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     newStatus: string | undefined,
     prevSync: string | undefined,
     newSync: string | undefined,
+    prevVersion: string | undefined,
+    newVersion: string | undefined,
     lastMessageTs?: string,
   ): Promise<void> {
     try {
@@ -100,6 +113,10 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
             {
               type: 'mrkdwn',
               text: `*Application:* \`${name}\``,
+            },
+            {
+              type: 'mrkdwn',
+              text: `*Version:* ${prevVersion !== newVersion ? `${prevVersion || 'unknown'} → *${newVersion || 'unknown'}*` : `${newVersion || 'unknown'}`}`,
             },
             {
               type: 'mrkdwn',
@@ -159,7 +176,8 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   }
 
   private shouldIgnoreResource(object: ArgoCdResource): boolean {
-    const { spec } = object;
+    const { spec, metadata } = object;
+    logger.debug(`Ignoring ${object.kind} '${metadata.name}' as it is a directory source`);
     return !!spec.source.directory;
   }
 }
