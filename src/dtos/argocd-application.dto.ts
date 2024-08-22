@@ -40,6 +40,7 @@ export const ArgoCdApplicationSpecSourceSchema = z
               })
               .passthrough()
               .optional(),
+            targetRevision: z.string().min(1).optional(),
           })
           .passthrough()
           .optional(),

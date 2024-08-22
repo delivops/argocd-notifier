@@ -34,7 +34,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
     const currentStatus = status?.health.status;
     const currentSync = status?.sync.status;
-    const currentVersion = spec.source.helm?.valuesObject?.image?.tag;
+    const currentVersion = spec.source.helm?.valuesObject?.image?.tag || spec.source.helm?.valuesObject?.targetRevision;
 
     const cachedResource = this.resourceCacheMap.get(name);
     const prevStatus = cachedResource?.status;

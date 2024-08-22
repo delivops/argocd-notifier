@@ -47,6 +47,9 @@ nvm current >.nvmrc
 # Use the newly installed Node.js version
 nvm use
 
+# Alias default Node.js version to the latest LTS version
+nvm alias default $(nvm current)
+
 # Check if a Docker image tag exists for a given Node.js version
 check_docker_image_current_tag() {
   current_tag=$1
@@ -56,15 +59,15 @@ check_docker_image_current_tag() {
 # Update Dockerfiles with the new Node.js version if the flag is set
 if [ "$update_dockerfiles" = true ]; then
   image=node
-  current_tag=$(tr -d 'v' <.nvmrc)-apline
-  old_tag=${oldver#v}-alpine
+  current_tag=$(tr -d 'v' <.nvmrc)-slim
+  old_tag=${oldver#v}-slim
 
   if check_docker_image_current_tag $current_tag; then
-    # Traverse all *.Dockerfile files in the "./docker" directory
-    # Replace the old Node.js image tag with the new one
-    for file in ./*.Dockerfile; do
-      if grep -q "$image:$old_tag" "$file"; then
-        sed -i "" "s/$image:$old_tag/$image:$current_tag/g" "$file"
+    # Replace the old Node.js image tag with the new one in Dockerfile
+    for file in ./*Dockerfile; do
+      # Check if the Dockerfile contains a Node.js image tag that is different from the current one
+      if grep -q "$image:" "$file" && ! grep -q "$image:$current_tag" "$file"; then
+        sed -i "" "s/$image:[^ ]*/$image:$current_tag/g" "$file"
         echo "Updated $file with Node.js version $current_tag"
       fi
     done

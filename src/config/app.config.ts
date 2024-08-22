@@ -10,8 +10,3 @@ export const slack_config = {
   TOKEN: env.get('SLACK_TOKEN').required().asString(),
   CHANNEL_ID: env.get('SLACK_CHANNEL_ID').required().asString(),
 };
-
-export const app_config = {
-  witHealthCheck: env.get('WITH_HEALTH_CHECK').required().asBool(),
-  healthCheckPort: env.get('HEALTH_CHECK_PORT').required().asInt(),
-};
