@@ -75,7 +75,7 @@ yarn docker:compose:up
 2. Stop the Docker Container:
 
 ```sh
-docker compose down
+yarn docker:compose:down
 ```
 
 ## Main Logic

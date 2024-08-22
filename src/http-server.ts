@@ -1,7 +1,6 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import http, { type Server } from 'http';
-import { app_config } from './config/app.config';
 import { logger } from './logger';
 
 export class HealthCheckServer {
@@ -9,7 +8,7 @@ export class HealthCheckServer {
   private static server: Server | null = null;
   private static activeConnections = 0;
 
-  private static readonly PORT = app_config.healthCheckPort || 3000;
+  private static readonly PORT = 80;
   private static readonly MAX_REQUESTS_PER_SECOND = 5;
   private static readonly MAX_SIMULTANEOUS_CONNECTIONS = 5;
 

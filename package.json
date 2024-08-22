@@ -24,10 +24,11 @@
     "docker:compose:up": "docker compose up -d --build --force-recreate argocd-watcher-notifier && docker compose logs -f argocd-watcher-notifier",
     "docker:compose:down": "docker compose down",
     "=== packages ===": "=== packages ===",
+    "clean-all": "find . -name 'node_modules' -type d -prune -exec rm -rf '{}' +;  yarn cache clean; rm yarn.lock",
     "packages:update:check": "yarn dlx npm-check-updates",
     "packages:update:minor": "yarn dlx npm-check-updates -u --target minor",
     "update-yarn": "yarn set version latest && yarn install",
-    "upgrade-node": "bash ./scripts/upgrade-node-lts-latest.sh",
+    "upgrade-node": "bash ./scripts/upgrade-node-lts-latest.sh --update-dockerfiles",
     "upgrade-all": "yarn update-yarn && yarn packages:update:minor && yarn upgrade-node"
   },
   "dependencies": {
@@ -46,7 +47,7 @@
     "@eslint/js": "^9.9.0",
     "@types/eslint__js": "^8.42.3",
     "@types/express": "^4",
-    "@types/node": "^22.4.2",
+    "@types/node": "^22.5.0",
     "eslint": "^9.9.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
