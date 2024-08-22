@@ -1,3 +1,4 @@
+import { app_config } from './config/app.config';
 import { HealthCheckServer } from './http-server';
 import { logger } from './logger';
 import { operatorResources } from './operator-resources';
@@ -6,7 +7,9 @@ import { VopsOperator } from './vops-operator';
 const operator = new VopsOperator(operatorResources, logger);
 void operator.start();
 
-HealthCheckServer.start();
+if (app_config.healthCheckPort) {
+  HealthCheckServer.start();
+}
 
 const exit = async (signal: string) => {
   logger.info(`Exiting: received ${signal}`);
