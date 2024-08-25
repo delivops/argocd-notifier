@@ -181,7 +181,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     const { prevStatus: _, currentStatus, prevSync: __, currentSync, prevVersion, currentVersion } = updateObject;
 
     const statusEmoji = this.getStatusEmoji(currentStatus);
-    const _syncEmoji = this.getStatusEmoji(currentSync);
+    const syncEmoji = this.getStatusEmoji(currentSync);
 
     const blocks: KnownBlock[] = [
       {
@@ -222,7 +222,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
           },
           {
             type: 'mrkdwn',
-            text: `*Sync Status:* ${statusEmoji} ${currentSync || '?'}`,
+            text: `*Sync Status:* ${syncEmoji} ${currentSync || '?'}`,
           },
         ],
       },
