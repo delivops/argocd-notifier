@@ -49,6 +49,8 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     const prevSync = cachedResource?.sync;
     const prevVersion = cachedResource?.version;
 
+    const targetNamespace = spec.destination.namespace;
+
     const isLastHealthUpdated =
       prevSync === currentSync &&
       ((prevStatus === ArgoCdHealthStatus.Progressing && currentStatus !== prevStatus) ||
@@ -63,7 +65,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       });
     } else if (prevSync !== currentSync || isLastHealthUpdated || prevVersion !== currentVersion) {
       logger.info(
-        `Updated status for ${kind} '${name}': syncStatus: ${prevSync} -> ${currentSync} / status: ${prevStatus} -> ${currentStatus} / version: ${prevVersion} -> ${currentVersion}`,
+        `Updated status for ${kind} '${name}': targetNamespace: ${targetNamespace} / syncStatus: ${prevSync} -> ${currentSync} / status: ${prevStatus} -> ${currentStatus} / version: ${prevVersion} -> ${currentVersion}`,
       );
 
       this.resourceCacheMap.set(name, {
@@ -76,6 +78,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
       await this.sendNotification(
         name,
+        targetNamespace,
         {
           prevStatus,
           currentStatus,
@@ -99,11 +102,16 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     }
   }
 
-  private async sendNotification(name: string, updatesObject: UpdatesObject, lastMessageTs?: string): Promise<void> {
+  private async sendNotification(
+    name: string,
+    targetNamespace: string | undefined,
+    updatesObject: UpdatesObject,
+    lastMessageTs?: string,
+  ): Promise<void> {
     try {
-      const blocks = this.createNotificationBlocks(name, updatesObject);
+      const blocks = this.createNotificationBlocks(name, targetNamespace, updatesObject);
 
-      const altText = this.createAltText(name, updatesObject);
+      const altText = this.createAltText(name, targetNamespace, updatesObject);
 
       if (lastMessageTs) {
         await this.slackClient.chat.update({
@@ -156,20 +164,20 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     return !!spec.source.directory;
   }
 
-  private createAltText(name: string, updateObject: UpdatesObject): string {
+  private createAltText(name: string, targetNamespace: string | undefined, updateObject: UpdatesObject): string {
     const { prevStatus: _, currentStatus, prevSync: __, currentSync, prevVersion, currentVersion } = updateObject;
 
-    let text =
-      `*Argo CD Application Updated*\n*Application:* ${name}` +
-      (process.env.NODE_ENV === 'production' ? '' : ' (TEST)');
-    text += `\n*Version:* ${this.formatChange(prevVersion, currentVersion)}`;
+    let text = `*Application Updated*`;
+    text += `\n*Application:* ${name}` + (process.env.NODE_ENV === 'production' ? '' : ' (TEST)');
+    text += `\n*Namespace:* \`${targetNamespace || 'Cluster Scoped'}\``;
+    text += `\n*Version:* ${this.formatChange(prevVersion, currentVersion, '', '`')}`;
     text += `\n*Health Status:* ${currentStatus || '?'}`;
     text += `\n*Sync Status:* ${currentSync || '?'}`;
 
     return text;
   }
 
-  private createNotificationBlocks(name: string, updateObject: UpdatesObject) {
+  private createNotificationBlocks(name: string, targetNamespace: string | undefined, updateObject: UpdatesObject) {
     const { prevStatus: _, currentStatus, prevSync: __, currentSync, prevVersion, currentVersion } = updateObject;
 
     const statusEmoji = this.getStatusEmoji(currentStatus);
@@ -180,7 +188,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: `Argo CD Application Updated: ${name}`,
+          text: `Application Updated: ${name}`,
           emoji: true,
         },
       },
@@ -193,8 +201,21 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
           },
           {
             type: 'mrkdwn',
-            text: `*Version:* ${this.formatChange(prevVersion, currentVersion)}`,
+            text: `*Namespace:* \`${targetNamespace || 'Cluster Scoped'}\``,
           },
+        ],
+      },
+
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Version:* ${this.formatChange(prevVersion, currentVersion, '', '`')}`,
+        },
+      },
+      {
+        type: 'section',
+        fields: [
           {
             type: 'mrkdwn',
             text: `*Health Status:* ${statusEmoji} ${currentStatus || '?'}`,
@@ -221,6 +242,6 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   ): string {
     return prev !== current
       ? `\n${emoji} ${markDownTag}${prev || '?'}${markDownTag} → ${markDownTag || '*'}${current || '?'}${markDownTag || '*'}`
-      : `${emoji} ${current || '?'}`;
+      : `${emoji} ${markDownTag}${current || '?'}${markDownTag}`;
   }
 }
