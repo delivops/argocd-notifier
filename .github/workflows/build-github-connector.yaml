@@ -21,6 +21,6 @@ jobs:
     uses: delivops/workflows/.github/workflows/ecr-build.yaml@main
     secrets: inherit
     with:
-      image_name: argocd-watcher-notifier
+      image_name: argocd-notifier
       tag: ${{github.sha}}
       push: false

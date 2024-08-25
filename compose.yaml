@@ -1,7 +1,7 @@
-name: argocd-watcher-notifier
+name: argocd-notifier
 
 services:
-  argocd-watcher-notifier:
+  argocd-notifier:
     build:
       context: '.'
       dockerfile: 'Dockerfile'
