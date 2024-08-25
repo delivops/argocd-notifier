@@ -87,8 +87,6 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
         cachedResource?.lastMessageTs,
       );
 
-      console.log('isLastHealthUpdated', isLastHealthUpdated);
-
       if (isLastHealthUpdated) {
         this.resourceCacheMap.set(name, {
           ...this.resourceCacheMap.get(name),
@@ -159,23 +157,23 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   }
 
   private createAltText(name: string, updateObject: UpdatesObject): string {
-    const { prevStatus, currentStatus, prevSync, currentSync, prevVersion, currentVersion } = updateObject;
+    const { prevStatus: _, currentStatus, prevSync: __, currentSync, prevVersion, currentVersion } = updateObject;
 
     let text =
       `*Argo CD Application Updated*\n*Application:* ${name}` +
       (process.env.NODE_ENV === 'production' ? '' : ' (TEST)');
     text += `\n*Version:* ${this.formatChange(prevVersion, currentVersion)}`;
-    text += `\n*Health Status:* ${this.formatChange(prevStatus, currentStatus)}`;
-    text += `\n*Sync Status:* ${this.formatChange(prevSync, currentSync)}`;
+    text += `\n*Health Status:* ${currentStatus || '?'}`;
+    text += `\n*Sync Status:* ${currentSync || '?'}`;
 
     return text;
   }
 
   private createNotificationBlocks(name: string, updateObject: UpdatesObject) {
-    const { prevStatus, currentStatus, prevSync, currentSync, prevVersion, currentVersion } = updateObject;
+    const { prevStatus: _, currentStatus, prevSync: __, currentSync, prevVersion, currentVersion } = updateObject;
 
     const statusEmoji = this.getStatusEmoji(currentStatus);
-    const syncEmoji = this.getStatusEmoji(currentSync);
+    const _syncEmoji = this.getStatusEmoji(currentSync);
 
     const blocks: KnownBlock[] = [
       {
@@ -199,11 +197,11 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
           },
           {
             type: 'mrkdwn',
-            text: `*Health Status:* ${this.formatChange(prevStatus, currentStatus, statusEmoji)}`,
+            text: `*Health Status:* ${statusEmoji} ${currentStatus || '?'}`,
           },
           {
             type: 'mrkdwn',
-            text: `*Sync Status:* ${this.formatChange(prevSync, currentSync, syncEmoji)}`,
+            text: `*Sync Status:* ${statusEmoji} ${currentSync || '?'}`,
           },
         ],
       },
@@ -215,7 +213,14 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     return blocks;
   }
 
-  private formatChange(prev: string | undefined, current: string | undefined, emoji: string = ''): string {
-    return prev !== current ? `\n${emoji} ${prev || '?'} → *${current || '?'}*` : `${emoji} ${current || '?'}`;
+  private formatChange(
+    prev: string | undefined,
+    current: string | undefined,
+    emoji: string = '',
+    markDownTag: string = '',
+  ): string {
+    return prev !== current
+      ? `\n${emoji} ${markDownTag}${prev || '?'}${markDownTag} → ${markDownTag || '*'}${current || '?'}${markDownTag || '*'}`
+      : `${emoji} ${current || '?'}`;
   }
 }
