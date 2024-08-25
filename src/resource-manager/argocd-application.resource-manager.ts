@@ -4,25 +4,33 @@ import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '@/enums/argocd.enum';
 import type { CustomResource } from '@/interfaces/custom-resource.interface';
 import { logger } from '@/logger';
 import { findCrdConfigByKind } from '@/operator-resources';
-import { WebClient } from '@slack/web-api';
+import { WebClient, type KnownBlock } from '@slack/web-api';
 import { BaseResourceManager } from './base.resource-manager';
 
 type ArgoCdResource = CustomResource<ArgoCdApplicationDto>;
+
+type CacheEntry = {
+  status?: Exclude<ArgoCdResource['status'], undefined>['health']['status'];
+  sync?: Exclude<ArgoCdResource['status'], undefined>['sync']['status'];
+  version?: string | undefined;
+  lastMessageTs?: string | undefined;
+};
+
+type UpdatesObject = {
+  prevStatus: string | undefined;
+  currentStatus: string | undefined;
+  prevSync: string | undefined;
+  currentSync: string | undefined;
+  prevVersion: string | undefined;
+  currentVersion: string | undefined;
+};
 
 export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   definition = findCrdConfigByKind(ArgoCdKind);
 
   private slackClient: WebClient = new WebClient(slack_config.TOKEN);
 
-  protected resourceCacheMap: Map<
-    ArgoCdResource['metadata']['name'],
-    {
-      status?: Exclude<ArgoCdResource['status'], undefined>['health']['status'];
-      sync?: Exclude<ArgoCdResource['status'], undefined>['sync']['status'];
-      version?: string | undefined;
-      lastMessageTs?: string;
-    }
-  > = new Map();
+  protected resourceCacheMap: Map<ArgoCdResource['metadata']['name'], CacheEntry> = new Map();
 
   protected async syncResource(object: ArgoCdResource): Promise<void> {
     const { kind, status, metadata, spec } = object;
@@ -34,7 +42,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
     const currentStatus = status?.health.status;
     const currentSync = status?.sync.status;
-    const currentVersion = spec.source.helm?.valuesObject?.image?.tag || spec.source.helm?.valuesObject?.targetRevision;
+    const currentVersion = spec.source.helm?.valuesObject?.image?.tag || spec.source.targetRevision;
 
     const cachedResource = this.resourceCacheMap.get(name);
     const prevStatus = cachedResource?.status;
@@ -53,7 +61,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
         sync: currentSync,
         version: currentVersion,
       });
-    } else if (prevSync !== currentSync || isLastHealthUpdated) {
+    } else if (prevSync !== currentSync || isLastHealthUpdated || prevVersion !== currentVersion) {
       logger.info(
         `Updated status for ${kind} '${name}': syncStatus: ${prevSync} -> ${currentSync} / status: ${prevStatus} -> ${currentStatus} / version: ${prevVersion} -> ${currentVersion}`,
       );
@@ -62,25 +70,29 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
         ...cachedResource,
         status: currentStatus,
         sync: currentSync,
-        version: currentVersion,
       });
 
       logger.info(`Sending notification for ${kind} '${name}'`);
 
       await this.sendNotification(
         name,
-        prevStatus,
-        currentStatus,
-        prevSync,
-        currentSync,
-        prevVersion,
-        currentVersion,
-        cachedResource.lastMessageTs,
+        {
+          prevStatus,
+          currentStatus,
+          prevSync,
+          currentSync,
+          prevVersion,
+          currentVersion,
+        },
+        cachedResource?.lastMessageTs,
       );
+
+      console.log('isLastHealthUpdated', isLastHealthUpdated);
 
       if (isLastHealthUpdated) {
         this.resourceCacheMap.set(name, {
           ...this.resourceCacheMap.get(name),
+          version: currentVersion,
           lastMessageTs: undefined,
         });
       }
@@ -89,56 +101,11 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     }
   }
 
-  private async sendNotification(
-    name: string,
-    prevStatus: string | undefined,
-    newStatus: string | undefined,
-    prevSync: string | undefined,
-    newSync: string | undefined,
-    prevVersion: string | undefined,
-    newVersion: string | undefined,
-    lastMessageTs?: string,
-  ): Promise<void> {
+  private async sendNotification(name: string, updatesObject: UpdatesObject, lastMessageTs?: string): Promise<void> {
     try {
-      const statusEmoji = this.getStatusEmoji(newStatus);
-      const syncEmoji = this.getStatusEmoji(newSync);
+      const blocks = this.createNotificationBlocks(name, updatesObject);
 
-      const blocks = [
-        {
-          type: 'header',
-          text: {
-            type: 'plain_text',
-            text: `Argo CD Application Updated: ${name}`,
-            emoji: true,
-          },
-        },
-        {
-          type: 'section',
-          fields: [
-            {
-              type: 'mrkdwn',
-              text: `*Application:* \`${name}\``,
-            },
-            {
-              type: 'mrkdwn',
-              text: `*Version:* ${prevVersion !== newVersion ? `\n${prevVersion || '?'} → *${newVersion || '?'}*` : `${newVersion || '?'}`}`,
-            },
-            {
-              type: 'mrkdwn',
-              text: `*Health Status:* ${prevStatus !== newStatus ? `\n${statusEmoji} ${prevStatus} → *${newStatus}*` : `${statusEmoji} ${newStatus}`}`,
-            },
-            {
-              type: 'mrkdwn',
-              text: `*Sync Status:* ${prevSync !== newSync ? `\n${syncEmoji} ${prevSync} → *${newSync}*` : `${syncEmoji} ${newSync}`}`,
-            },
-          ],
-        },
-        {
-          type: 'divider',
-        },
-      ];
-
-      const altText = `*Argo CD Application Updated*\n*Application:* ${name}\n*Health Status:* ${prevStatus} -> ${newStatus}\n*Sync Status:* ${prevSync} -> ${newSync}\n*Version:* ${prevVersion} -> ${newVersion}`;
+      const altText = this.createAltText(name, updatesObject);
 
       if (lastMessageTs) {
         await this.slackClient.chat.update({
@@ -147,6 +114,8 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
           channel: process.env.SLACK_CHANNEL_ID!,
           ts: lastMessageTs,
         });
+
+        logger.info(`New Notification sent to Slack for ${name}`);
       } else {
         const res = await this.slackClient.chat.postMessage({
           icon_url: 'https://argo-cd.readthedocs.io/en/stable/assets/logo.png',
@@ -155,10 +124,10 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
           channel: process.env.SLACK_CHANNEL_ID!,
         });
 
+        logger.info(`Notification update sent to Slack for ${name}`);
+
         this.resourceCacheMap.set(name, { ...this.resourceCacheMap.get(name), lastMessageTs: res.ts });
       }
-
-      logger.info(`Notification sent to Slack for ${name}`);
     } catch (error) {
       logger.error(`Failed to send Slack notification: ${error}`);
     }
@@ -187,5 +156,66 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     const { spec, metadata } = object;
     logger.debug(`Ignoring ${object.kind} '${metadata.name}' as it is a directory source`);
     return !!spec.source.directory;
+  }
+
+  private createAltText(name: string, updateObject: UpdatesObject): string {
+    const { prevStatus, currentStatus, prevSync, currentSync, prevVersion, currentVersion } = updateObject;
+
+    let text =
+      `*Argo CD Application Updated*\n*Application:* ${name}` +
+      (process.env.NODE_ENV === 'production' ? '' : ' (TEST)');
+    text += `\n*Version:* ${this.formatChange(prevVersion, currentVersion)}`;
+    text += `\n*Health Status:* ${this.formatChange(prevStatus, currentStatus)}`;
+    text += `\n*Sync Status:* ${this.formatChange(prevSync, currentSync)}`;
+
+    return text;
+  }
+
+  private createNotificationBlocks(name: string, updateObject: UpdatesObject) {
+    const { prevStatus, currentStatus, prevSync, currentSync, prevVersion, currentVersion } = updateObject;
+
+    const statusEmoji = this.getStatusEmoji(currentStatus);
+    const syncEmoji = this.getStatusEmoji(currentSync);
+
+    const blocks: KnownBlock[] = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: `Argo CD Application Updated: ${name}`,
+          emoji: true,
+        },
+      },
+      {
+        type: 'section',
+        fields: [
+          {
+            type: 'mrkdwn',
+            text: `*Application:* \`${name}\`` + (process.env.NODE_ENV === 'production' ? '' : ' (TEST)'),
+          },
+          {
+            type: 'mrkdwn',
+            text: `*Version:* ${this.formatChange(prevVersion, currentVersion)}`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*Health Status:* ${this.formatChange(prevStatus, currentStatus, statusEmoji)}`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*Sync Status:* ${this.formatChange(prevSync, currentSync, syncEmoji)}`,
+          },
+        ],
+      },
+      {
+        type: 'divider',
+      },
+    ];
+
+    return blocks;
+  }
+
+  private formatChange(prev: string | undefined, current: string | undefined, emoji: string = ''): string {
+    return prev !== current ? `\n${emoji} ${prev || '?'} → *${current || '?'}*` : `${emoji} ${current || '?'}`;
   }
 }

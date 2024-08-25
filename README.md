@@ -84,9 +84,9 @@ The main logic of the application is implemented in the `ArgoCdApplicationResour
 
 ### Key Methods:
 
-- `syncResource(object: ArgoCdResource)`: Synchronizes the resource and updates the cache.
-- `sendNotification(name: string, prevStatus: string | undefined, newStatus: string | undefined, prevSync: string | undefined, newSync: string | undefined, lastMessageTs?: string)`: Sends a notification to Slack.
-- `shouldIgnoreResource(object: ArgoCdResource)`: Determines if a resource should be ignored based on its specification.
+- `syncResource`: Synchronizes the resource and updates the cache.
+- `sendNotification`: Sends a notification to Slack.
+- `shouldIgnoreResource`: Determines if a resource should be ignored based on its specification.
 
 # Troubleshooting
 

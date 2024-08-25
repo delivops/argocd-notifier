@@ -33,7 +33,7 @@ jobs:
     secrets: inherit
     needs: bump-version
     with:
-      image_name: argocd-watcher-notifier
+      image_name: argocd-notifier
       tag: ${{needs.bump-version.outputs.new_tag}},latest
 
   gitops-deploy:
@@ -41,7 +41,7 @@ jobs:
     needs: [bump-version, publish]
     secrets: inherit
     with:
-      applications: argocd-watcher-notifier
+      applications: argocd-notifier
       cluster_name: prod
       project: argocd
       tag: ${{needs.bump-version.outputs.new_tag}}

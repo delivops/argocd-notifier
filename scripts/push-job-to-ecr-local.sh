@@ -101,4 +101,4 @@ call_app_push() {
     fi
 }
 
-call_app_push "argocd-watcher-notifier" "./" "Dockerfile"
+call_app_push "argocd-notifier" "./" "Dockerfile"
