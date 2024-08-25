@@ -20,7 +20,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       status?: Exclude<ArgoCdResource['status'], undefined>['health']['status'];
       sync?: Exclude<ArgoCdResource['status'], undefined>['sync']['status'];
       version?: string | undefined;
-      lastMessageTs?: string;
+      lastMessageTs?: string | undefined;
     }
   > = new Map();
 
@@ -34,7 +34,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
     const currentStatus = status?.health.status;
     const currentSync = status?.sync.status;
-    const currentVersion = spec.source.helm?.valuesObject?.image?.tag || spec.source.helm?.valuesObject?.targetRevision;
+    const currentVersion = spec.source.helm?.valuesObject?.image?.tag || spec.source.targetRevision;
 
     const cachedResource = this.resourceCacheMap.get(name);
     const prevStatus = cachedResource?.status;
@@ -53,7 +53,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
         sync: currentSync,
         version: currentVersion,
       });
-    } else if (prevSync !== currentSync || isLastHealthUpdated) {
+    } else if (prevSync !== currentSync || isLastHealthUpdated || prevVersion !== currentVersion) {
       logger.info(
         `Updated status for ${kind} '${name}': syncStatus: ${prevSync} -> ${currentSync} / status: ${prevStatus} -> ${currentStatus} / version: ${prevVersion} -> ${currentVersion}`,
       );
@@ -62,7 +62,6 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
         ...cachedResource,
         status: currentStatus,
         sync: currentSync,
-        version: currentVersion,
       });
 
       logger.info(`Sending notification for ${kind} '${name}'`);
@@ -75,12 +74,13 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
         currentSync,
         prevVersion,
         currentVersion,
-        cachedResource.lastMessageTs,
+        cachedResource?.lastMessageTs,
       );
 
       if (isLastHealthUpdated) {
         this.resourceCacheMap.set(name, {
           ...this.resourceCacheMap.get(name),
+          version: currentVersion,
           lastMessageTs: undefined,
         });
       }
