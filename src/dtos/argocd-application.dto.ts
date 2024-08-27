@@ -24,6 +24,17 @@ export const ArgoCdApplicationMetadataSchema = z
   })
   .passthrough();
 
+export const ArgoCdApplicationSpecSourceHelmValuesObjectSchema = z
+  .object({
+    image: z
+      .object({
+        tag: z.string().min(1),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
 export const ArgoCdApplicationSpecSourceSchema = z
   .object({
     chart: z.string().min(1).optional(),
@@ -32,18 +43,7 @@ export const ArgoCdApplicationSpecSourceSchema = z
     targetRevision: z.string().min(1),
     helm: z
       .object({
-        valuesObject: z
-          .object({
-            image: z
-              .object({
-                tag: z.string().min(1),
-              })
-              .passthrough()
-              .optional(),
-            targetRevision: z.string().min(1).optional(),
-          })
-          .passthrough()
-          .optional(),
+        valuesObject: ArgoCdApplicationSpecSourceHelmValuesObjectSchema.optional(),
       })
       .optional(),
     directory: z.object({ recurse: z.boolean().optional() }).passthrough().optional(),
@@ -94,3 +94,8 @@ export const ArgoCdApplicationSchema = z.object({
 });
 
 export type ArgoCdApplicationDto = z.infer<typeof ArgoCdApplicationSchema>;
+export type ArgoCdApplicationStatus = z.infer<typeof ArgoCdApplicationStatusSchema>;
+export type ArgoCdApplicationSpec = z.infer<typeof ArgoCdApplicationSpecSchema>;
+export type ArgoCdApplicationSpecSourceHelmValuesObject = z.infer<
+  typeof ArgoCdApplicationSpecSourceHelmValuesObjectSchema
+>;

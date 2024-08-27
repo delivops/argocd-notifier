@@ -7,6 +7,9 @@ export const argo_config = {
 } as const;
 
 export const slack_config = {
-  TOKEN: env.get('SLACK_TOKEN').required().asString(),
+  TOKEN: env
+    .get('SLACK_TOKEN')
+    .required(process.env.NODE_ENV === 'production')
+    .asString(),
   CHANNEL_ID: env.get('SLACK_CHANNEL_ID').required().asString(),
 };
