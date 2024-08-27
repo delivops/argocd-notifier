@@ -14,7 +14,6 @@ import { BaseResourceManager } from './base.resource-manager';
 
 type ArgoCdResource = CustomResource<ArgoCdApplicationDto>;
 type ValuesObject = ArgoCdApplicationSpecSourceHelmValuesObject;
-
 type ChangesObject = Partial<ValuesObject> & { targetRevision?: string };
 
 interface CacheEntry {
@@ -45,8 +44,8 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     }
 
     const update: ResourceUpdate = {
-      status: status?.health.status || ('' as ArgoCdHealthStatus),
-      sync: status?.sync.status || ('' as ArgoCdSyncStatus),
+      status: status?.health.status || ArgoCdHealthStatus.Unknown,
+      sync: status?.sync.status || ArgoCdSyncStatus.Unknown,
       valuesObject: spec.source.helm?.valuesObject || {},
       targetRevision: spec.source.targetRevision || '',
     };
@@ -54,23 +53,16 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     const cachedResource = this.resourceCacheMap.get(name);
 
     if (!cachedResource) {
-      // Set initial cache with current or empty values then return
-      await this.initializeCache(name, update.status, update.sync, update.valuesObject, update.targetRevision);
+      await this.initializeCache(name, update);
       return;
     }
 
     await this.handleResourceUpdate(name, cachedResource, update, spec.destination.namespace);
   }
 
-  private async initializeCache(
-    name: string,
-    status: ArgoCdHealthStatus,
-    sync: ArgoCdSyncStatus,
-    valuesObject: ValuesObject,
-    targetRevision: string,
-  ): Promise<void> {
+  private async initializeCache(name: string, update: ResourceUpdate): Promise<void> {
     logger.debug(`Initializing cache for ${this.definition.names.kind} '${name}'`);
-    this.resourceCacheMap.set(name, { status, sync, valuesObject, targetRevision, lastMessageTs: undefined });
+    this.resourceCacheMap.set(name, { ...update, lastMessageTs: undefined });
   }
 
   private async handleResourceUpdate(
@@ -79,16 +71,13 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     update: ResourceUpdate,
     targetNamespace: string | undefined,
   ): Promise<void> {
-    const { lastMessageTs } = cachedResource;
-    const changes: Partial<ChangesObject> = filterChanges<ChangesObject>(
-      { valuesObject: update.valuesObject, targetRevision: update.targetRevision },
-      { valuesObject: cachedResource.valuesObject, targetRevision: cachedResource.targetRevision },
-    );
+    const changes: ChangesObject = this.getChanges(cachedResource, update);
+    const hasChanges = Object.keys(changes).length > 0;
 
-    if (cachedResource.sync !== update.sync) {
-      await this.handleSyncStatusChange(name, targetNamespace, update, changes, cachedResource, lastMessageTs);
-    } else if (cachedResource.status !== update.status) {
-      await this.handleHealthStatusChange(name, targetNamespace, update, changes, cachedResource, lastMessageTs);
+    if (this.isSyncStatusChanged(cachedResource, update)) {
+      await this.handleSyncStatusChange(name, targetNamespace, update, changes, cachedResource, hasChanges);
+    } else if (this.isHealthStatusChanged(cachedResource, update)) {
+      await this.handleHealthStatusChange(name, targetNamespace, update, changes, cachedResource);
     } else {
       logger.debug(`No status change for ${this.definition.names.kind} '${name}'`);
     }
@@ -100,37 +89,18 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     update: ResourceUpdate,
     changes: ChangesObject,
     cachedResource: CacheEntry,
-    lastMessageTs: string | undefined,
+    hasChanges: boolean,
   ): Promise<void> {
-    const { valuesObject: prevValuesObject, targetRevision: prevTargetRevision } = cachedResource;
-    const hasChanges = Object.keys(changes).length > 0;
-
     if (hasChanges) {
       if (update.sync === ArgoCdSyncStatus.OutOfSync) {
         this.updateCache(name, { sync: update.sync, lastMessageTs: undefined });
-        await this.createSlackMessage(name, targetNamespace, update, changes, prevValuesObject, prevTargetRevision);
+        await this.createSlackMessage(name, targetNamespace, update, changes, cachedResource);
       } else {
-        this.updateCache(name, { sync: update.sync });
-        await this.sendNotification(
-          name,
-          targetNamespace,
-          update,
-          changes,
-          prevValuesObject,
-          prevTargetRevision,
-          lastMessageTs,
-        );
+        this.updateCache(name, { sync: update.sync, ...changes });
+        await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, cachedResource);
       }
     } else {
-      await this.sendNotification(
-        name,
-        targetNamespace,
-        update,
-        changes,
-        prevValuesObject,
-        prevTargetRevision,
-        lastMessageTs,
-      );
+      await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, cachedResource);
     }
   }
 
@@ -140,57 +110,27 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     update: ResourceUpdate,
     changes: ChangesObject,
     cachedResource: CacheEntry,
-    lastMessageTs: string | undefined,
   ): Promise<void> {
-    const { valuesObject: prevValuesObject, targetRevision: prevTargetRevision } = cachedResource;
     if (this.isDeploySettled(update, cachedResource)) {
-      // Full cache update
       this.updateCache(name, { ...update, lastMessageTs: undefined });
     } else {
       this.updateCache(name, { status: update.status });
     }
-    await this.sendNotification(
-      name,
-      targetNamespace,
-      update,
-      changes,
-      prevValuesObject,
-      prevTargetRevision,
-      lastMessageTs,
-    );
+    await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, cachedResource);
   }
 
-  private async sendNotification(
+  private async updateOrCreateSlackMessage(
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
     changes: ChangesObject,
-    prevValuesObject: ValuesObject,
-    prevTargetRevision: string,
-    lastMessageTs?: string,
+    cachedResource: CacheEntry,
   ): Promise<void> {
-    logger.debug('=========================================================');
-    logger.debug('===================== UPDATE ============================');
-    logger.dir({ currentStatus: update.status, currentSync: update.sync });
-    logger.debug(JSON.stringify({ valuesObject: update.valuesObject, targetRevision: update.targetRevision }));
-    logger.debug('====================== CACHED ===========================');
-    // logger.dir({ prevStatus: cachedResource.status, prevSync: cachedResource.sync });
-    logger.debug(JSON.stringify({ valuesObject: prevValuesObject, targetRevision: prevTargetRevision }));
-    logger.debug('=========================================================');
-    logger.debug('=========================================================');
-
+    const { lastMessageTs } = cachedResource;
     if (lastMessageTs) {
-      await this.updateSlackMessage(
-        name,
-        targetNamespace,
-        update,
-        changes,
-        prevValuesObject,
-        prevTargetRevision,
-        lastMessageTs,
-      );
+      await this.updateSlackMessage(name, targetNamespace, update, changes, cachedResource, lastMessageTs);
     } else {
-      await this.createSlackMessage(name, targetNamespace, update, changes, prevValuesObject, prevTargetRevision);
+      await this.createSlackMessage(name, targetNamespace, update, changes, cachedResource);
     }
   }
 
@@ -206,26 +146,13 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     targetNamespace: string | undefined,
     update: ResourceUpdate,
     changes: ChangesObject,
-    prevValuesObject: ValuesObject,
-    prevTargetRevision: string,
+    cachedResource: CacheEntry,
   ): Promise<void> {
     try {
-      const blocks = this.createNotificationBlocks(
-        name,
-        targetNamespace,
-        update,
-        changes,
-        prevValuesObject,
-        prevTargetRevision,
-      );
-      const altText = this.createAltText(name, targetNamespace, update, changes, prevValuesObject, prevTargetRevision);
+      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changes, cachedResource);
+      const altText = this.createAltText(name, targetNamespace, update, changes, cachedResource);
 
-      const res = (await this.slackClient?.chat.postMessage({
-        icon_url: 'https://argo-cd.readthedocs.io/en/stable/assets/logo.png',
-        text: altText,
-        blocks,
-        channel: slack_config.CHANNEL_ID,
-      })) || { ts: new Date().toISOString() };
+      const res = await this.sendSlackMessage(blocks, altText);
 
       logger.info(`New notification sent to Slack for ${name}`);
       logger.dir({ text: altText, blocks }, { depth: 10 });
@@ -241,20 +168,12 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     targetNamespace: string | undefined,
     update: ResourceUpdate,
     changes: ChangesObject,
-    prevValuesObject: ValuesObject,
-    prevTargetRevision: string,
+    cachedResource: CacheEntry,
     lastMessageTs: string,
   ): Promise<void> {
     try {
-      const blocks = this.createNotificationBlocks(
-        name,
-        targetNamespace,
-        update,
-        changes,
-        prevValuesObject,
-        prevTargetRevision,
-      );
-      const altText = this.createAltText(name, targetNamespace, update, changes, prevValuesObject, prevTargetRevision);
+      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changes, cachedResource);
+      const altText = this.createAltText(name, targetNamespace, update, changes, cachedResource);
 
       await this.slackClient?.chat.update({
         text: altText,
@@ -270,17 +189,27 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     }
   }
 
+  private async sendSlackMessage(blocks: KnownBlock[], altText: string): Promise<{ ts: string }> {
+    const res = await this.slackClient?.chat.postMessage({
+      icon_url: 'https://argo-cd.readthedocs.io/en/stable/assets/logo.png',
+      text: altText,
+      blocks,
+      channel: slack_config.CHANNEL_ID,
+    });
+
+    return { ts: res?.ts || new Date().toISOString() };
+  }
+
   private createNotificationBlocks(
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
     changes: ChangesObject,
-    prevValuesObject: ValuesObject,
-    prevTargetRevision: string,
+    cachedResource: CacheEntry,
   ): KnownBlock[] {
     const blocks: KnownBlock[] = [
       this.createHeaderBlock(name),
-      ...this.createInfoBlock(name, targetNamespace, prevValuesObject, changes, prevTargetRevision),
+      ...this.createInfoBlock(name, targetNamespace, changes, cachedResource),
       this.createStatusBlock(update),
     ];
 
@@ -309,10 +238,9 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     name: string,
     targetNamespace: string | undefined,
     changes: ChangesObject,
-    prevValuesObject: ValuesObject,
-    prevTargetRevision: string,
+    cachedResource: CacheEntry,
   ): KnownBlock[] {
-    const prevVersion = prevValuesObject.image?.tag || prevTargetRevision;
+    const prevVersion = cachedResource.valuesObject.image?.tag || cachedResource.targetRevision;
     const currentVersion = changes.image?.tag || changes.targetRevision || prevVersion;
     return [
       {
@@ -345,17 +273,17 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       fields: [
         {
           type: 'mrkdwn',
-          text: `*Health Status:* ${this.getStatusEmoji(status)} ${status || '?'}`,
+          text: `*Health Status:* ${this.getStatusEmoji(status)} ${status}`,
         },
         {
           type: 'mrkdwn',
-          text: `*Sync Status:* ${this.getStatusEmoji(sync)} ${sync || '?'}`,
+          text: `*Sync Status:* ${this.getStatusEmoji(sync)} ${sync}`,
         },
       ],
     };
   }
 
-  private createChangesBlock(changes: Partial<ValuesObject>): KnownBlock {
+  private createChangesBlock(changes: ChangesObject): KnownBlock {
     return {
       type: 'section',
       text: {
@@ -370,22 +298,21 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     targetNamespace: string | undefined,
     update: ResourceUpdate,
     changes: ChangesObject,
-    prevValuesObject: ValuesObject,
-    prevTargetRevision: string,
+    cachedResource: CacheEntry,
   ): string {
-    const prevVersion = prevValuesObject.image?.tag || prevTargetRevision;
+    const prevVersion = cachedResource.valuesObject.image?.tag || cachedResource.targetRevision;
     const currentVersion = changes.image?.tag || changes.targetRevision || prevVersion;
     return [
       `*Application Updated*`,
       `*Application:* ${name}${process.env.NODE_ENV === 'production' ? '' : ' (TEST)'}`,
-      `*Namespace:* \`${targetNamespace || 'Cluster Scoped'}\``,
-      `*Version:* ${this.createChangeDescription(prevVersion, currentVersion, '', '`')}`,
-      `*Health Status:* ${update.status || '?'}`,
-      `*Sync Status:* ${update.sync || '?'}`,
+      `*Namespace:* ${targetNamespace || 'Cluster Scoped'}`,
+      `*Version:* ${this.createChangeDescription(prevVersion, currentVersion)}`,
+      `*Health Status:* ${update.status}`,
+      `*Sync Status:* ${update.sync}`,
     ].join('\n');
   }
 
-  private getStatusEmoji(status?: ArgoCdHealthStatus | ArgoCdSyncStatus): string {
+  private getStatusEmoji(status: ArgoCdHealthStatus | ArgoCdSyncStatus): string {
     const emojiMap: Record<string, string> = {
       [ArgoCdHealthStatus.Degraded]: ':x:',
       [ArgoCdHealthStatus.Missing]: ':x:',
@@ -396,7 +323,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       [ArgoCdSyncStatus.Synced]: ':white_check_mark:',
     };
 
-    return emojiMap[status || ''] || '';
+    return emojiMap[status] || '';
   }
 
   private isDirectorySource(resource: ArgoCdResource): boolean {
@@ -406,6 +333,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   private isDeploySettled(update: ResourceUpdate, cachedResource: CacheEntry): boolean {
     return cachedResource.status === ArgoCdHealthStatus.Progressing && update.status !== cachedResource.status;
   }
+
   private createChangeDescription(
     prev: string | undefined,
     current: string | undefined,
@@ -414,8 +342,23 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   ): string {
     const currentFormattedVersion = `${emoji} ${markDownTag}${current || '?'}${markDownTag}`;
     if (prev !== current) {
-      return `${emoji} ${markDownTag}${prev || '?'}${markDownTag} → ` + currentFormattedVersion;
+      return `${emoji} ${markDownTag}${prev || '?'}${markDownTag} → ${currentFormattedVersion}`;
     }
     return currentFormattedVersion;
+  }
+
+  private getChanges(cachedResource: CacheEntry, update: ResourceUpdate): ChangesObject {
+    return filterChanges<ChangesObject>(
+      { valuesObject: update.valuesObject, targetRevision: update.targetRevision },
+      { valuesObject: cachedResource.valuesObject, targetRevision: cachedResource.targetRevision },
+    );
+  }
+
+  private isSyncStatusChanged(cachedResource: CacheEntry, update: ResourceUpdate): boolean {
+    return cachedResource.sync !== update.sync;
+  }
+
+  private isHealthStatusChanged(cachedResource: CacheEntry, update: ResourceUpdate): boolean {
+    return cachedResource.status !== update.status;
   }
 }
