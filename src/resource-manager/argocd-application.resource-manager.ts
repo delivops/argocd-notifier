@@ -10,6 +10,7 @@ import { logger } from '@/logger';
 import { findCrdConfigByKind } from '@/operator-resources';
 import { filterChanges } from '@/utils/filter-changes';
 import { WebClient, type KnownBlock } from '@slack/web-api';
+import YAML from 'yaml';
 import { BaseResourceManager } from './base.resource-manager';
 
 type ArgoCdResource = CustomResource<ArgoCdApplicationDto>;
@@ -112,7 +113,12 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     cachedResource: CacheEntry,
   ): Promise<void> {
     if (this.isDeploySettled(update, cachedResource)) {
-      this.updateCache(name, { ...update, lastMessageTs: undefined });
+      // TODO: DECIDE ON THE BEHAVIOR
+      // add { lastMessageTs: undefined } to force sending a new notification
+      // when the deployment is settled after being in Progressing state
+      // a) this way we know when a new version is deployed
+      // b) when Degraded or Missing status is looped new notification will be sent
+      this.updateCache(name, { ...update });
     } else {
       this.updateCache(name, { status: update.status });
     }
@@ -288,7 +294,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Changes:*\n\`\`\`yaml\n${JSON.stringify(changes, null, 2)}\n\`\`\``,
+        text: `*Changes:*\n\`\`\`\n${YAML.stringify(changes)}\n\`\`\``,
       },
     };
   }
@@ -309,6 +315,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       `*Version:* ${this.createChangeDescription(prevVersion, currentVersion)}`,
       `*Health Status:* ${update.status}`,
       `*Sync Status:* ${update.sync}`,
+      `*Changes:* ${JSON.stringify(changes)}`,
     ].join('\n');
   }
 
