@@ -75,10 +75,18 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     const changes: ChangesObject = this.getChanges(cachedResource, update);
     const hasChanges = Object.keys(changes).length > 0;
 
-    if (this.isSyncStatusChanged(cachedResource, update)) {
-      await this.handleSyncStatusChange(name, targetNamespace, update, changes, cachedResource, hasChanges);
-    } else if (this.isHealthStatusChanged(cachedResource, update)) {
-      await this.handleHealthStatusChange(name, targetNamespace, update, changes, cachedResource);
+    const syncChanged = this.isSyncStatusChanged(cachedResource, update);
+    const healthChanged = this.isHealthStatusChanged(cachedResource, update);
+
+    if (syncChanged || healthChanged) {
+      if (syncChanged) {
+        await this.handleSyncStatusChange(name, update, changes, hasChanges);
+      }
+      if (healthChanged) {
+        await this.handleHealthStatusChange(name, update, cachedResource);
+      }
+
+      await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, cachedResource);
     } else {
       logger.debug(`No status change for ${this.definition.names.kind} '${name}'`);
     }
@@ -86,43 +94,33 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
   private async handleSyncStatusChange(
     name: string,
-    targetNamespace: string | undefined,
     update: ResourceUpdate,
     changes: ChangesObject,
-    cachedResource: CacheEntry,
     hasChanges: boolean,
   ): Promise<void> {
-    if (hasChanges) {
-      if (update.sync === ArgoCdSyncStatus.OutOfSync) {
-        this.updateCache(name, { sync: update.sync, lastMessageTs: undefined });
-        await this.createSlackMessage(name, targetNamespace, update, changes, cachedResource);
-      } else {
-        this.updateCache(name, { sync: update.sync, ...changes });
-        await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, cachedResource);
-      }
+    if (hasChanges && update.sync === ArgoCdSyncStatus.OutOfSync) {
+      this.updateCache(name, { sync: update.sync, lastMessageTs: undefined });
     } else {
-      await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, cachedResource);
+      this.updateCache(name, { sync: update.sync, ...changes });
     }
   }
 
   private async handleHealthStatusChange(
     name: string,
-    targetNamespace: string | undefined,
     update: ResourceUpdate,
-    changes: ChangesObject,
     cachedResource: CacheEntry,
   ): Promise<void> {
     if (this.isDeploySettled(update, cachedResource)) {
+      this.updateCache(name, { ...update });
+      // this.updateCache(name, { ...update });
       // TODO: DECIDE ON THE BEHAVIOR
-      // add { lastMessageTs: undefined } to force sending a new notification
+      // use { lastMessageTs: undefined } to force sending a new notification
       // when the deployment is settled after being in Progressing state
       // a) this way we know when a new version is deployed
       // b) when Degraded or Missing status is looped new notification will be sent
-      this.updateCache(name, { ...update });
     } else {
       this.updateCache(name, { status: update.status });
     }
-    await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, cachedResource);
   }
 
   private async updateOrCreateSlackMessage(
@@ -294,7 +292,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Changes:*\n\`\`\`\n${YAML.stringify(changes)}\n\`\`\``,
+        text: `*Changes:*\n\`\`\`\n${YAML.stringify(changes).slice(0, 3000)}\n\`\`\``,
       },
     };
   }
@@ -316,7 +314,9 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       `*Health Status:* ${update.status}`,
       `*Sync Status:* ${update.sync}`,
       `*Changes:* ${JSON.stringify(changes)}`,
-    ].join('\n');
+    ]
+      .join('\n')
+      .slice(0, 4000);
   }
 
   private getStatusEmoji(status: ArgoCdHealthStatus | ArgoCdSyncStatus): string {
