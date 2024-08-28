@@ -288,7 +288,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Changes:*\n\`\`\`\n${YAML.stringify(changes).slice(0, 3000)}\n\`\`\``,
+        text: `*Changes:*\n\`\`\`\n${YAML.stringify(changes).slice(0, 3000).trim()}\n\`\`\``,
       },
     };
   }
