@@ -93,3 +93,7 @@ The main logic of the application is implemented in the `ArgoCdApplicationResour
 ## If typescript doesn't work in vscode follow instructions in the link below:
 
 https://yarnpkg.com/getting-started/editor-sdks
+
+## Flowchart
+
+![Flowchart](assets/flowchart.png)
