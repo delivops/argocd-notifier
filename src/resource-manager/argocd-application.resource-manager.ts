@@ -80,28 +80,23 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
     if (syncChanged || healthChanged) {
       if (syncChanged) {
-        await this.handleSyncStatusChange(name, update, changes, hasChanges);
+        await this.handleSyncStatusChange(name, update, hasChanges);
       }
       if (healthChanged) {
         await this.handleHealthStatusChange(name, update, cachedResource);
       }
 
-      await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, cachedResource);
+      await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, hasChanges, cachedResource);
     } else {
       logger.debug(`No status change for ${this.definition.names.kind} '${name}'`);
     }
   }
 
-  private async handleSyncStatusChange(
-    name: string,
-    update: ResourceUpdate,
-    changes: ChangesObject,
-    hasChanges: boolean,
-  ): Promise<void> {
+  private async handleSyncStatusChange(name: string, update: ResourceUpdate, hasChanges: boolean): Promise<void> {
     if (hasChanges && update.sync === ArgoCdSyncStatus.OutOfSync) {
       this.updateCache(name, { sync: update.sync, lastMessageTs: undefined });
     } else {
-      this.updateCache(name, { sync: update.sync, ...changes });
+      this.updateCache(name, { sync: update.sync });
     }
   }
 
@@ -128,10 +123,11 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     targetNamespace: string | undefined,
     update: ResourceUpdate,
     changes: ChangesObject,
+    hasChanges: boolean,
     cachedResource: CacheEntry,
   ): Promise<void> {
     const { lastMessageTs } = cachedResource;
-    if (lastMessageTs) {
+    if (lastMessageTs && !hasChanges) {
       await this.updateSlackMessage(name, targetNamespace, update, changes, cachedResource, lastMessageTs);
     } else {
       await this.createSlackMessage(name, targetNamespace, update, changes, cachedResource);
