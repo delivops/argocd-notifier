@@ -5,19 +5,21 @@ interface DiffOptions {
   contextLines?: number;
   separator?: string;
   stringifier?: 'YAML' | 'JSON';
+  numberLines?: boolean;
 }
 
 const DEFAULT_OPTIONS: Required<DiffOptions> = {
   contextLines: 4,
   separator: '...'.repeat(3),
   stringifier: 'YAML',
+  numberLines: true,
 };
 
 function generateReadableDiff(original: unknown, updated: unknown, options: DiffOptions = {}): string {
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
-  const { contextLines, separator, stringifier } = mergedOptions;
+  const { contextLines, separator, stringifier, numberLines } = mergedOptions;
 
-  const stringify = stringifier === 'JSON' ? JSON.stringify : YAML.stringify;
+  const stringify = stringifier === 'JSON' ? (obj: unknown) => JSON.stringify(obj, null, 2) : YAML.stringify;
   const originalString = typeof original === 'string' ? original : stringify(original ?? String(original));
   const updatedString = typeof updated === 'string' ? updated : stringify(updated ?? String(updated));
 
@@ -25,7 +27,7 @@ function generateReadableDiff(original: unknown, updated: unknown, options: Diff
     context: contextLines,
   });
 
-  return formatDiff(diffText, separator);
+  return formatDiff(diffText, separator, numberLines);
 }
 
 interface LineNumbers {
@@ -33,7 +35,7 @@ interface LineNumbers {
   right: number | null;
 }
 
-function formatDiff(diff: string, separator: string): string {
+function formatDiff(diff: string, separator: string, shouldNumberLines: boolean): string {
   const lines = diff.split('\n').slice(3);
   const maxLineNumber = getMaxLineNumber(lines);
   const padWidth = maxLineNumber > 0 ? Math.floor(Math.log10(maxLineNumber)) + 1 : 1;
@@ -44,16 +46,18 @@ function formatDiff(diff: string, separator: string): string {
   for (const line of lines) {
     const type = line.charAt(0);
     if (type === '@') {
-      const match = line.match(/@@ -(\d+),(\d+) \+(\d+),(\d+) @@/);
-      if (match) {
-        lineNumbers = {
-          left: parseInt(match[1], 10),
-          right: parseInt(match[3], 10),
-        };
-        formattedLines.push(separator);
+      if (shouldNumberLines) {
+        const match = line.match(/@@ -(\d+),(\d+) \+(\d+),(\d+) @@/);
+        if (match) {
+          lineNumbers = {
+            left: parseInt(match[1], 10),
+            right: parseInt(match[3], 10),
+          };
+        }
       }
+      formattedLines.push(separator);
     } else if (['+', '-', ' '].includes(type)) {
-      const formattedLine = formatLine(line, lineNumbers, padWidth);
+      const formattedLine = shouldNumberLines ? formatLine(line, lineNumbers, padWidth) : line;
       formattedLines.push(formattedLine);
       updateLineNumbers(lineNumbers, type);
     }
