@@ -38,11 +38,14 @@ export function generateReadableDiff(original: unknown, updated: unknown, option
   const originalString = typeof original === 'string' ? original : stringify(original ?? String(original));
   const updatedString = typeof updated === 'string' ? updated : stringify(updated ?? String(updated));
 
+  const originalLinesCount = originalString.length > 0 ? originalString.split('\n').length : 0;
+  const updatedLinesCount = updatedString.length > 0 ? updatedString.split('\n').length : 0;
+
   const diffText = Diff.createTwoFilesPatch('original', 'updated', originalString, updatedString, '', '', {
     context: contextLines,
   });
 
-  return formatDiff(diffText, separator, numberLines);
+  return formatDiff(diffText, separator, numberLines, originalLinesCount, updatedLinesCount);
 }
 
 interface LineNumbers {
@@ -56,9 +59,18 @@ interface LineNumbers {
  * @param diff - The raw diff text.
  * @param separator - The separator string to use between chunks.
  * @param shouldNumberLines - Whether to include line numbers.
+ * @param originalLinesCount - The length of the original string.
+ * @param updatedLinesCount - The length of the updated string.
  * @returns The formatted diff string.
  */
-function formatDiff(diff: string, separator: string, shouldNumberLines: boolean): string {
+function formatDiff(
+  diff: string,
+  separator: string,
+  shouldNumberLines: boolean,
+  originalLinesCount: number,
+  updatedLinesCount: number,
+): string {
+  // Skip the first 3 lines (diff filenames, headers)
   const lines = diff.split('\n').slice(3);
   const maxLineNumber = getMaxLineNumber(lines);
   const padWidth = maxLineNumber > 0 ? Math.floor(Math.log10(maxLineNumber)) + 1 : 1;
@@ -76,14 +88,25 @@ function formatDiff(diff: string, separator: string, shouldNumberLines: boolean)
             left: parseInt(match[1], 10),
             right: parseInt(match[3], 10),
           };
+          if (lineNumbers.left !== 1 || lineNumbers.right !== 1) {
+            formattedLines.push(separator);
+          }
         }
+      } else {
+        formattedLines.push(separator);
       }
-      formattedLines.push(separator);
     } else if (['+', '-', ' '].includes(type)) {
-      const formattedLine = shouldNumberLines ? formatLine(line, lineNumbers, padWidth) : line;
+      const formattedLine = shouldNumberLines ? formatLine(line, type, lineNumbers, padWidth) : line;
       formattedLines.push(formattedLine);
       updateLineNumbers(lineNumbers, type);
     }
+  }
+
+  const diffLastLineNumber = Math.max(lineNumbers.left ?? 0, lineNumbers.right ?? 0);
+  const contentLastLineNumber = Math.max(originalLinesCount, updatedLinesCount);
+
+  if (diffLastLineNumber > 0 && diffLastLineNumber < contentLastLineNumber) {
+    formattedLines.push(separator);
   }
 
   return formattedLines.join('\n');
@@ -112,14 +135,24 @@ function getMaxLineNumber(lines: string[]): number {
  * Formats a single line of the diff with line numbers.
  *
  * @param line - The line to format.
+ * @param type - The type of the line ('+', '-', or ' ').
  * @param lineNumbers - The current line numbers.
  * @param padWidth - The width to pad the line numbers to.
  * @returns The formatted line.
  */
-function formatLine(line: string, lineNumbers: LineNumbers, padWidth: number): string {
+function formatLine(line: string, type: string, lineNumbers: LineNumbers, padWidth: number): string {
   const leftNum = lineNumbers.left !== null ? lineNumbers.left.toString().padStart(padWidth) : ' '.repeat(padWidth);
   const rightNum = lineNumbers.right !== null ? lineNumbers.right.toString().padStart(padWidth) : ' '.repeat(padWidth);
-  return `${leftNum} ${rightNum} ${line}`;
+  switch (type) {
+    case ' ':
+      return `${leftNum} ${rightNum} ${line}`;
+    case '-':
+      return `${leftNum} ${rightNum.replace(/\d/g, ' ')} ${line}`;
+    case '+':
+      return `${leftNum.replace(/\d/g, ' ')} ${rightNum} ${line}`;
+    default:
+      return line;
+  }
 }
 
 /**
