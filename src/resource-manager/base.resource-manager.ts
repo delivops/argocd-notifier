@@ -39,7 +39,7 @@ export abstract class BaseResourceManager {
         handler = this.handleUpToDateEvent;
         break;
       default:
-        logger.error(`Unknown event type: ${event.type}`);
+        logger.warn(`Unknown event type: ${event.type}`);
         logger.dir(event);
         break;
     }

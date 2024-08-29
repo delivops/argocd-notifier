@@ -1,32 +1,27 @@
 import { slack_config } from '@/config/app.config';
-import {
-  ArgoCdKind,
-  type ArgoCdApplicationDto,
-  type ArgoCdApplicationSpecSourceHelmValuesObject,
-} from '@/dtos/argocd-application.dto';
+import { ArgoCdKind, type ArgoCdApplicationDto, type ArgoCdApplicationSpec } from '@/dtos/argocd-application.dto';
 import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '@/enums/argocd.enum';
 import type { CustomResource } from '@/interfaces/custom-resource.interface';
 import { logger } from '@/logger';
 import { findCrdConfigByKind } from '@/operator-resources';
-import { filterChanges } from '@/utils/filter-changes';
 import { generateReadableDiff } from '@/utils/generate-readable-diff';
 import { WebClient, type KnownBlock } from '@slack/web-api';
 import { BaseResourceManager } from './base.resource-manager';
 
 type ArgoCdResource = CustomResource<ArgoCdApplicationDto>;
-type ValuesObject = ArgoCdApplicationSpecSourceHelmValuesObject;
-type ChangesObject = Partial<ValuesObject> & { targetRevision?: string };
 
 interface CacheEntry {
   status: ArgoCdHealthStatus;
   sync: ArgoCdSyncStatus;
-  valuesObject: ValuesObject;
-  targetRevision: string;
+  spec: ArgoCdApplicationSpec;
   lastMessageTs: string | undefined;
-  lastChanges: ChangesObject | undefined;
 }
 
-type ResourceUpdate = Omit<CacheEntry, 'lastMessageTs' | 'lastChanges'>;
+type ResourceUpdate = {
+  status: ArgoCdHealthStatus;
+  sync: ArgoCdSyncStatus;
+  spec: ArgoCdApplicationSpec;
+};
 
 export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   readonly definition = findCrdConfigByKind(ArgoCdKind);
@@ -48,8 +43,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     const update: ResourceUpdate = {
       status: status?.health.status || ArgoCdHealthStatus.N_A,
       sync: status?.sync.status || ArgoCdSyncStatus.N_A,
-      valuesObject: spec.source.helm?.valuesObject || {},
-      targetRevision: spec.source.targetRevision || '',
+      spec,
     };
 
     if (!this.resourceCacheMap.has(name)) {
@@ -62,7 +56,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
 
   private async initializeCache(name: string, update: ResourceUpdate): Promise<void> {
     logger.debug(`Initializing cache for ${this.definition.names.kind} '${name}'`);
-    this.resourceCacheMap.set(name, { ...update, lastMessageTs: undefined, lastChanges: undefined });
+    this.resourceCacheMap.set(name, { ...update, lastMessageTs: undefined });
   }
 
   private async handleResourceUpdate(
@@ -71,27 +65,37 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     targetNamespace: string | undefined,
   ): Promise<void> {
     const cachedResource = this.resourceCacheMap.get(name)!;
-    const changes: ChangesObject = this.getChanges(cachedResource, update);
-    const hasChanges = Object.keys(changes).length > 0;
 
-    const syncChanged = this.isSyncStatusChanged(cachedResource, update);
-    const healthChanged = this.isHealthStatusChanged(cachedResource, update);
+    const changesString = this.generateChangesString(cachedResource, update);
+    const hasChanges = changesString.length > 0;
+
+    const syncChanged = cachedResource.sync !== update.sync;
+    const healthChanged = cachedResource.status !== update.status;
 
     if (syncChanged || healthChanged || hasChanges) {
-      if (hasChanges || (update.sync === ArgoCdSyncStatus.OutOfSync && !cachedResource.lastChanges)) {
-        await this.createSlackMessage(name, targetNamespace, update, changes);
-        this.resourceCacheMap.set(name, {
-          ...update,
-          lastMessageTs: this.resourceCacheMap.get(name)!.lastMessageTs,
-          lastChanges: changes,
-        });
+      logger.verbose(
+        `Sending Slack notification for ${name}: ` +
+          `syncStatus: ${cachedResource.sync}->${update.sync}, ` +
+          `healthStatus: ${cachedResource.status}->${update.status}, ` +
+          `${hasChanges ? 'has changes' : 'NO changes'}, ` +
+          `hasMessageTimestamp: ${!!cachedResource.lastMessageTs}`,
+      );
+      if (syncChanged && update.sync === ArgoCdSyncStatus.OutOfSync && hasChanges) {
+        const res = await this.createSlackMessage(name, targetNamespace, update);
+
+        const lastMessageTs = res?.ts || new Date().toISOString();
+        this.resourceCacheMap.set(name, { ...update, lastMessageTs });
       } else {
-        await this.updateSlackMessage(name, targetNamespace, update, cachedResource.lastChanges || {});
-        this.resourceCacheMap.set(name, {
-          ...update,
-          lastMessageTs: this.resourceCacheMap.get(name)!.lastMessageTs,
-          lastChanges: cachedResource.lastChanges,
-        });
+        let res: Awaited<ReturnType<typeof this.updateSlackMessage | typeof this.createSlackMessage>>;
+
+        if (cachedResource.lastMessageTs) {
+          res = await this.updateSlackMessage(name, targetNamespace, update);
+        } else {
+          res = await this.createSlackMessage(name, targetNamespace, update);
+        }
+
+        const lastMessageTs = res?.ts || new Date().toISOString();
+        this.resourceCacheMap.set(name, { ...update, spec: cachedResource.spec, lastMessageTs });
       }
     } else {
       logger.debug(`No status change for ${this.definition.names.kind} '${name}'`);
@@ -102,12 +106,13 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
-    changes: ChangesObject,
-  ): Promise<void> {
+  ): Promise<{ ts: string | undefined } | undefined> {
+    let ts: string | undefined;
+
     try {
       const cachedResource = this.resourceCacheMap.get(name)!;
-      const changesString = this.createChangesString(cachedResource, update);
-      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changes, changesString);
+      const changesString = this.generateChangesString(cachedResource, update);
+      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changesString);
       const altText = this.createAltText(name, targetNamespace, update, changesString);
 
       const res = await this.slackClient?.chat.postMessage({
@@ -118,30 +123,28 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       });
 
       logger.info(`New notification sent to Slack for ${name}`);
-      logger.dir({ text: altText, blocks }, { depth: 10 });
+      logger.dir({ text: altText }, { depth: 10, level: 'verbose' });
 
-      this.resourceCacheMap.set(name, {
-        ...this.resourceCacheMap.get(name)!,
-        lastMessageTs: res?.ts || new Date().toISOString(),
-      });
+      ts = res?.ts;
     } catch (error) {
       logger.error(`Failed to send Slack notification: ${error}`);
     }
+
+    return { ts };
   }
 
   private async updateSlackMessage(
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
-    changes: ChangesObject,
-  ): Promise<void> {
+  ): Promise<{ ts: string | undefined } | undefined> {
     try {
       const cachedResource = this.resourceCacheMap.get(name)!;
-      const changesString = this.createChangesString(cachedResource, update);
-      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changes, changesString);
+      const changesString = this.generateChangesString(cachedResource, update);
+      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changesString);
       const altText = this.createAltText(name, targetNamespace, update, changesString);
 
-      await this.slackClient?.chat.update({
+      const res = await this.slackClient?.chat.update({
         text: altText,
         blocks,
         channel: slack_config.CHANNEL_ID,
@@ -149,7 +152,9 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       });
 
       logger.info(`Notification updated in Slack for ${name}`);
-      logger.dir({ text: altText, blocks, ts: cachedResource.lastMessageTs }, { depth: 10 });
+      logger.dir({ text: altText, ts: cachedResource.lastMessageTs }, { depth: 10, level: 'verbose' });
+
+      return { ts: res?.ts };
     } catch (error) {
       logger.error(`Failed to update Slack notification: ${error}`);
     }
@@ -159,7 +164,6 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
-    changes: ChangesObject,
     changesString: string,
   ): KnownBlock[] {
     const blocks: KnownBlock[] = [
@@ -168,8 +172,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       this.createStatusBlock(update),
     ];
 
-    const hasChanges = Object.keys(changes).length > 0;
-    if (hasChanges) {
+    if (changesString) {
       blocks.push(this.createChangesBlock(changesString));
     }
 
@@ -270,7 +273,7 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     return !!resource.spec.source.directory;
   }
 
-  private createChangeDescription(
+  private _createChangeDescription(
     prev: string | undefined,
     current: string | undefined,
     emoji: string = '',
@@ -283,25 +286,13 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     return currentFormattedVersion;
   }
 
-  private createChangesString(cachedResource: CacheEntry, update: ResourceUpdate): string {
-    return generateReadableDiff(
-      { valuesObject: cachedResource.valuesObject, targetRevision: cachedResource.targetRevision },
-      { valuesObject: update.valuesObject, targetRevision: update.targetRevision },
-    );
-  }
-
-  private getChanges(cachedResource: CacheEntry, update: ResourceUpdate): ChangesObject {
-    return filterChanges<ChangesObject>(
-      { valuesObject: update.valuesObject, targetRevision: update.targetRevision },
-      { valuesObject: cachedResource.valuesObject, targetRevision: cachedResource.targetRevision },
-    );
-  }
-
-  private isSyncStatusChanged(cachedResource: CacheEntry, update: ResourceUpdate): boolean {
-    return cachedResource.sync !== update.sync;
-  }
-
-  private isHealthStatusChanged(cachedResource: CacheEntry, update: ResourceUpdate): boolean {
-    return cachedResource.status !== update.status;
+  private generateChangesString(cachedResource: CacheEntry, update: ResourceUpdate): string {
+    const { syncPolicy: _, ...cachedResourceWithoutSyncPolicy } = cachedResource.spec as CacheEntry['spec'] & {
+      syncPolicy: object;
+    };
+    const { syncPolicy: __, ...updateWithoutSyncPolicy } = update.spec as ResourceUpdate['spec'] & {
+      syncPolicy: object;
+    };
+    return generateReadableDiff(cachedResourceWithoutSyncPolicy, updateWithoutSyncPolicy);
   }
 }

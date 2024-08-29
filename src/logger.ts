@@ -23,8 +23,16 @@ const baseLogger = createLogger({
 });
 
 const logger = Object.assign(baseLogger, {
-  dir(obj: unknown, options: Partial<InspectOptions> = { colors: true, depth: 2 }) {
-    baseLogger.debug(inspect(obj, { ...{ colors: LOG_FORMAT === 'json' ? false : true, depth: 2 }, ...options }));
+  dir(
+    obj: unknown,
+    options: Partial<InspectOptions & { level: 'debug' | 'verbose' | 'info' }> = {
+      colors: true,
+      depth: 2,
+      level: 'debug',
+    },
+  ) {
+    const level = options.level || 'debug';
+    baseLogger[level](inspect(obj, { ...{ colors: LOG_FORMAT === 'json' ? false : true, depth: 2 }, ...options }));
   },
 });
 

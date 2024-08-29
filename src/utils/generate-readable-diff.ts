@@ -18,8 +18,8 @@ function generateReadableDiff(original: unknown, updated: unknown, options: Diff
   const { contextLines, separator, stringifier } = mergedOptions;
 
   const stringify = stringifier === 'JSON' ? JSON.stringify : YAML.stringify;
-  const originalString = stringify(original);
-  const updatedString = stringify(updated);
+  const originalString = typeof original === 'string' ? original : stringify(original ?? String(original));
+  const updatedString = typeof updated === 'string' ? updated : stringify(updated ?? String(updated));
 
   const diffText = Diff.createTwoFilesPatch('original', 'updated', originalString, updatedString, '', '', {
     context: contextLines,
