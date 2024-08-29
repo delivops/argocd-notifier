@@ -11,7 +11,7 @@ HealthCheckServer.start();
 const exit = async (signal: string) => {
   logger.info(`Exiting: received ${signal}`);
   operator.stop();
-  await HealthCheckServer.stop(); // Ensure HealthCheckServer stops completely
+  await HealthCheckServer.stop();
   process.exit(0);
 };
 

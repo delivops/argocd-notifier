@@ -39,10 +39,12 @@ __metadata:
     "@eslint/js": "npm:^9.9.1"
     "@kubernetes/client-node": "npm:^0.21.0"
     "@slack/web-api": "npm:^7.3.4"
+    "@types/diff": "npm:^5.2.2"
     "@types/eslint__js": "npm:^8.42.3"
     "@types/express": "npm:^4"
     "@types/node": "npm:^22.5.0"
     croner: "npm:^8.1.1"
+    diff: "npm:^6.0.0-beta"
     dotenv: "npm:^16.4.5"
     env-var: "npm:^7.5.0"
     eslint: "npm:^9.9.1"
@@ -340,6 +342,13 @@ __metadata:
   dependencies:
     "@types/node": "npm:*"
   checksum: 10c0/2e1cdba2c410f25649e77856505cd60223250fa12dff7a503e492208dbfdd25f62859918f28aba95315251fd1f5e1ffbfca1e25e73037189ab85dd3f8d0a148c
+  languageName: node
+  linkType: hard
+
+"@types/diff@npm:^5.2.2":
+  version: 5.2.2
+  resolution: "@types/diff@npm:5.2.2"
+  checksum: 10c0/ee9987b1029c4aa6e4a8947ff19bf3bb5d0c2226a76d220879af188614eb321baa52e89939fd4fbdfc3ecd1294ed95206893e1ba1a433b87256d13e2b369f269
   languageName: node
   linkType: hard
 
@@ -1171,6 +1180,13 @@ __metadata:
   version: 4.0.2
   resolution: "diff@npm:4.0.2"
   checksum: 10c0/81b91f9d39c4eaca068eb0c1eb0e4afbdc5bb2941d197f513dd596b820b956fef43485876226d65d497bebc15666aa2aa82c679e84f65d5f2bfbf14ee46e32c1
+  languageName: node
+  linkType: hard
+
+"diff@npm:^6.0.0-beta":
+  version: 6.0.0-beta
+  resolution: "diff@npm:6.0.0-beta"
+  checksum: 10c0/5683c09db8e90ecc5dcc5643130d3a8974c528719afe6ba640fb40bb5bdae8a84fb02702e0749ea22cdfa1e9e40e83f5b077203dfdaa4fd5cdccc77f278d4177
   languageName: node
   linkType: hard
 

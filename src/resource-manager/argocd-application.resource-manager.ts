@@ -1,31 +1,25 @@
 import { slack_config } from '@/config/app.config';
-import {
-  ArgoCdKind,
-  type ArgoCdApplicationDto,
-  type ArgoCdApplicationSpecSourceHelmValuesObject,
-} from '@/dtos/argocd-application.dto';
+import { ArgoCdKind, type ArgoCdApplicationDto, type ArgoCdApplicationSpec } from '@/dtos/argocd-application.dto';
 import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '@/enums/argocd.enum';
 import type { CustomResource } from '@/interfaces/custom-resource.interface';
 import { logger } from '@/logger';
 import { findCrdConfigByKind } from '@/operator-resources';
-import { filterChanges } from '@/utils/filter-changes';
+import { generateReadableDiff } from '@/utils/generate-readable-diff';
 import { WebClient, type KnownBlock } from '@slack/web-api';
-import YAML from 'yaml';
 import { BaseResourceManager } from './base.resource-manager';
 
 type ArgoCdResource = CustomResource<ArgoCdApplicationDto>;
-type ValuesObject = ArgoCdApplicationSpecSourceHelmValuesObject;
-type ChangesObject = Partial<ValuesObject> & { targetRevision?: string };
 
 interface CacheEntry {
   status: ArgoCdHealthStatus;
   sync: ArgoCdSyncStatus;
-  valuesObject: ValuesObject;
-  targetRevision: string;
+  spec: ArgoCdApplicationSpec;
   lastMessageTs: string | undefined;
+  persistentChanges: string;
+  deploymentInProgress: boolean;
 }
 
-type ResourceUpdate = Omit<CacheEntry, 'lastMessageTs'>;
+type ResourceUpdate = Pick<CacheEntry, 'status' | 'sync' | 'spec'>;
 
 export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   readonly definition = findCrdConfigByKind(ArgoCdKind);
@@ -45,121 +39,147 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     }
 
     const update: ResourceUpdate = {
-      status: status?.health.status || ArgoCdHealthStatus.Unknown,
-      sync: status?.sync.status || ArgoCdSyncStatus.Unknown,
-      valuesObject: spec.source.helm?.valuesObject || {},
-      targetRevision: spec.source.targetRevision || '',
+      status: status?.health.status || ArgoCdHealthStatus.N_A,
+      sync: status?.sync.status || ArgoCdSyncStatus.N_A,
+      spec,
     };
 
-    const cachedResource = this.resourceCacheMap.get(name);
-
-    if (!cachedResource) {
+    if (!this.resourceCacheMap.has(name)) {
       await this.initializeCache(name, update);
       return;
     }
 
-    await this.handleResourceUpdate(name, cachedResource, update, spec.destination.namespace);
+    await this.handleResourceUpdate(name, update, spec.destination.namespace);
   }
 
   private async initializeCache(name: string, update: ResourceUpdate): Promise<void> {
     logger.debug(`Initializing cache for ${this.definition.names.kind} '${name}'`);
-    this.resourceCacheMap.set(name, { ...update, lastMessageTs: undefined });
+    this.resourceCacheMap.set(name, {
+      ...update,
+      lastMessageTs: undefined,
+      persistentChanges: '',
+      deploymentInProgress: false,
+    });
   }
 
   private async handleResourceUpdate(
     name: string,
-    cachedResource: CacheEntry,
     update: ResourceUpdate,
     targetNamespace: string | undefined,
   ): Promise<void> {
-    const changes: ChangesObject = this.getChanges(cachedResource, update);
-    const hasChanges = Object.keys(changes).length > 0;
+    const cachedResource = this.resourceCacheMap.get(name)!;
+    const changesString = this.generateChangesString(cachedResource, update);
+    const hasChanges = changesString.length > 0;
+    const statusChanged = this.hasStatusChanged(cachedResource, update);
 
-    const syncChanged = this.isSyncStatusChanged(cachedResource, update);
-    const healthChanged = this.isHealthStatusChanged(cachedResource, update);
+    this.logResourceUpdate(name, cachedResource, update, hasChanges);
 
-    if (syncChanged || healthChanged) {
-      if (syncChanged) {
-        await this.handleSyncStatusChange(name, update, hasChanges);
+    if (statusChanged && hasChanges) {
+      if (!cachedResource.deploymentInProgress) {
+        await this.startNewDeployment(name, targetNamespace, update, changesString);
+      } else {
+        await this.updateExistingDeployment(name, targetNamespace, update, changesString);
       }
-      if (healthChanged) {
-        await this.handleHealthStatusChange(name, update, cachedResource);
-      }
-
-      await this.updateOrCreateSlackMessage(name, targetNamespace, update, changes, hasChanges, cachedResource);
+    } else if (statusChanged && cachedResource.deploymentInProgress) {
+      await this.updateExistingDeployment(name, targetNamespace, update, changesString);
     } else {
       logger.debug(`No status change for ${this.definition.names.kind} '${name}'`);
     }
   }
 
-  private async handleSyncStatusChange(name: string, update: ResourceUpdate, hasChanges: boolean): Promise<void> {
-    if (hasChanges && update.sync === ArgoCdSyncStatus.OutOfSync) {
-      this.updateCache(name, { sync: update.sync, lastMessageTs: undefined });
-    } else {
-      this.updateCache(name, { sync: update.sync });
-    }
+  private hasStatusChanged(cachedResource: CacheEntry, update: ResourceUpdate): boolean {
+    return cachedResource.sync !== update.sync || cachedResource.status !== update.status;
   }
 
-  private async handleHealthStatusChange(
+  private logResourceUpdate(
     name: string,
-    update: ResourceUpdate,
     cachedResource: CacheEntry,
-  ): Promise<void> {
-    if (this.isDeploySettled(update, cachedResource)) {
-      this.updateCache(name, { ...update });
-      // this.updateCache(name, { ...update });
-      // TODO: DECIDE ON THE BEHAVIOR
-      // use { lastMessageTs: undefined } to force sending a new notification
-      // when the deployment is settled after being in Progressing state
-      // a) this way we know when a new version is deployed
-      // b) when Degraded or Missing status is looped new notification will be sent
-    } else {
-      this.updateCache(name, { status: update.status });
-    }
+    update: ResourceUpdate,
+    hasChanges: boolean,
+  ): void {
+    logger.verbose(
+      `Processing update for ${name}: ` +
+        `syncStatus: ${cachedResource.sync}->${update.sync}, ` +
+        `healthStatus: ${cachedResource.status}->${update.status}, ` +
+        `${hasChanges ? 'has changes' : 'NO changes'}, ` +
+        `hasMessageTimestamp: ${!!cachedResource.lastMessageTs}, ` +
+        `deploymentInProgress: ${cachedResource.deploymentInProgress}`,
+    );
   }
 
-  private async updateOrCreateSlackMessage(
+  private async startNewDeployment(
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
-    changes: ChangesObject,
-    hasChanges: boolean,
-    cachedResource: CacheEntry,
+    changesString: string,
   ): Promise<void> {
-    const { lastMessageTs } = cachedResource;
-    if (lastMessageTs && !hasChanges) {
-      await this.updateSlackMessage(name, targetNamespace, update, changes, cachedResource, lastMessageTs);
-    } else {
-      await this.createSlackMessage(name, targetNamespace, update, changes, cachedResource);
-    }
+    logger.info(`Starting new deployment for ${name}`);
+    const res = await this.createSlackMessage(name, targetNamespace, update, changesString);
+
+    const lastMessageTs = res?.ts || new Date().toISOString();
+    this.updateResourceCache(name, update, lastMessageTs, changesString, true);
   }
 
-  private updateCache(name: string, cacheUpdate: Partial<CacheEntry>): void {
-    const cachedResource = this.resourceCacheMap.get(name);
-    if (cachedResource) {
-      this.resourceCacheMap.set(name, { ...cachedResource, ...cacheUpdate });
-    }
+  private async updateExistingDeployment(
+    name: string,
+    targetNamespace: string | undefined,
+    update: ResourceUpdate,
+    changesString: string,
+  ): Promise<void> {
+    logger.info(`Updating existing deployment for ${name}`);
+    const cachedResource = this.resourceCacheMap.get(name)!;
+    const updatedChanges = this.mergeChanges(cachedResource.persistentChanges, changesString);
+
+    const res = await this.updateSlackMessage(name, targetNamespace, update, updatedChanges);
+
+    const lastMessageTs = res?.ts || cachedResource.lastMessageTs;
+    const deploymentInProgress = this.isDeploymentInProgress(update);
+    this.updateResourceCache(name, update, lastMessageTs, updatedChanges, deploymentInProgress);
+  }
+
+  private updateResourceCache(
+    name: string,
+    update: ResourceUpdate,
+    lastMessageTs: string | undefined,
+    persistentChanges: string,
+    deploymentInProgress: boolean,
+  ): void {
+    this.resourceCacheMap.set(name, {
+      ...update,
+      lastMessageTs,
+      persistentChanges,
+      deploymentInProgress,
+    });
+  }
+
+  private isDeploymentInProgress(update: ResourceUpdate): boolean {
+    return update.sync !== ArgoCdSyncStatus.Synced || update.status !== ArgoCdHealthStatus.Healthy;
+  }
+
+  private mergeChanges(existingChanges: string, newChanges: string): string {
+    if (!existingChanges) return newChanges;
+    if (!newChanges) return existingChanges;
+    return `${existingChanges}\n${newChanges}`;
   }
 
   private async createSlackMessage(
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
-    changes: ChangesObject,
-    cachedResource: CacheEntry,
-  ): Promise<void> {
+    changesString: string,
+  ): Promise<{ ts: string | undefined } | undefined> {
     try {
-      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changes, cachedResource);
-      const altText = this.createAltText(name, targetNamespace, update, changes, cachedResource);
+      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changesString);
+      const altText = this.createAltText(name, targetNamespace, update, changesString);
 
-      const res = await this.sendSlackMessage(blocks, altText);
+      const res = await this.sendSlackMessage(altText, blocks);
 
       logger.info(`New notification sent to Slack for ${name}`);
-      logger.dir({ text: altText, blocks }, { depth: 10 });
+      logger.verbose(`${altText}`);
 
-      this.updateCache(name, { lastMessageTs: res.ts });
+      return { ts: res?.ts };
     } catch (error) {
-      logger.error(`Failed to send Slack notification: ${error}`);
+      logger.error(`Failed to send Slack notification:`, error);
     }
   }
 
@@ -167,55 +187,61 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
-    changes: ChangesObject,
-    cachedResource: CacheEntry,
-    lastMessageTs: string,
-  ): Promise<void> {
+    changesString: string,
+  ): Promise<{ ts: string | undefined } | undefined> {
     try {
-      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changes, cachedResource);
-      const altText = this.createAltText(name, targetNamespace, update, changes, cachedResource);
+      const cachedResource = this.resourceCacheMap.get(name)!;
+      const blocks = this.createNotificationBlocks(name, targetNamespace, update, changesString);
+      const altText = this.createAltText(name, targetNamespace, update, changesString);
 
-      await this.slackClient?.chat.update({
-        text: altText,
-        blocks,
-        channel: slack_config.CHANNEL_ID,
-        ts: lastMessageTs,
-      });
+      const res = await this.updateExistingSlackMessage(altText, blocks, cachedResource.lastMessageTs!);
 
       logger.info(`Notification updated in Slack for ${name}`);
-      logger.dir({ text: altText, blocks, ts: lastMessageTs }, { depth: 10 });
+      logger.verbose(`${altText}.\ncachedResource.lastMessageTs: ${cachedResource.lastMessageTs}`);
+
+      return { ts: res?.ts };
     } catch (error) {
-      logger.error(`Failed to update Slack notification: ${error}`);
+      logger.error(`Failed to update Slack notification:`, error);
     }
   }
 
-  private async sendSlackMessage(blocks: KnownBlock[], altText: string): Promise<{ ts: string }> {
-    const res = await this.slackClient?.chat.postMessage({
+  private async sendSlackMessage(text: string, blocks: KnownBlock[]): Promise<{ ts?: string } | undefined> {
+    return this.slackClient?.chat.postMessage({
       icon_url: 'https://argo-cd.readthedocs.io/en/stable/assets/logo.png',
-      text: altText,
+      text,
+      unfurl_links: false,
       blocks,
       channel: slack_config.CHANNEL_ID,
     });
+  }
 
-    return { ts: res?.ts || new Date().toISOString() };
+  private async updateExistingSlackMessage(
+    text: string,
+    blocks: KnownBlock[],
+    ts: string,
+  ): Promise<{ ts?: string } | undefined> {
+    return this.slackClient?.chat.update({
+      text,
+      blocks,
+      channel: slack_config.CHANNEL_ID,
+      ts,
+    });
   }
 
   private createNotificationBlocks(
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
-    changes: ChangesObject,
-    cachedResource: CacheEntry,
+    changesString: string,
   ): KnownBlock[] {
     const blocks: KnownBlock[] = [
       this.createHeaderBlock(name),
-      ...this.createInfoBlock(name, targetNamespace, changes, cachedResource),
+      ...this.createInfoBlock(name, targetNamespace),
       this.createStatusBlock(update),
     ];
 
-    const hasChanges = Object.keys(changes).length > 0;
-    if (hasChanges) {
-      blocks.push(this.createChangesBlock(changes));
+    if (changesString) {
+      blocks.push(this.createChangesBlock(changesString));
     }
 
     blocks.push({ type: 'divider' });
@@ -224,24 +250,18 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   }
 
   private createHeaderBlock(name: string): KnownBlock {
+    const environmentIndicator = process.env.NODE_ENV === 'production' ? '' : ' (TEST)';
     return {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: `Application Updated: ${name}${process.env.NODE_ENV === 'production' ? '' : ' (TEST)'}`,
+        text: `Application Updated: ${name}${environmentIndicator}`,
         emoji: true,
       },
     };
   }
 
-  private createInfoBlock(
-    name: string,
-    targetNamespace: string | undefined,
-    changes: ChangesObject,
-    cachedResource: CacheEntry,
-  ): KnownBlock[] {
-    const prevVersion = cachedResource.valuesObject.image?.tag || cachedResource.targetRevision;
-    const currentVersion = changes.image?.tag || changes.targetRevision || prevVersion;
+  private createInfoBlock(name: string, targetNamespace: string | undefined): KnownBlock[] {
     return [
       {
         type: 'section',
@@ -255,13 +275,6 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
             text: `*Namespace:* \`${targetNamespace || 'Cluster Scoped'}\``,
           },
         ],
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Version:* ${this.createChangeDescription(prevVersion, currentVersion, '', '`')}`,
-        },
       },
     ];
   }
@@ -283,12 +296,12 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     };
   }
 
-  private createChangesBlock(changes: ChangesObject): KnownBlock {
+  private createChangesBlock(changesString: string): KnownBlock {
     return {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Changes:*\n\`\`\`\n${YAML.stringify(changes).slice(0, 3000)}\n\`\`\``,
+        text: `*Changes:* \n\`\`\`\n${changesString || 'no changes'}\n\`\`\``,
       },
     };
   }
@@ -297,19 +310,16 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     name: string,
     targetNamespace: string | undefined,
     update: ResourceUpdate,
-    changes: ChangesObject,
-    cachedResource: CacheEntry,
+    changesString: string,
   ): string {
-    const prevVersion = cachedResource.valuesObject.image?.tag || cachedResource.targetRevision;
-    const currentVersion = changes.image?.tag || changes.targetRevision || prevVersion;
+    const environmentIndicator = process.env.NODE_ENV === 'production' ? '' : ' (TEST)';
     return [
       `*Application Updated*`,
-      `*Application:* ${name}${process.env.NODE_ENV === 'production' ? '' : ' (TEST)'}`,
+      `*Application:* ${name}${environmentIndicator}`,
       `*Namespace:* ${targetNamespace || 'Cluster Scoped'}`,
-      `*Version:* ${this.createChangeDescription(prevVersion, currentVersion)}`,
       `*Health Status:* ${update.status}`,
       `*Sync Status:* ${update.sync}`,
-      `*Changes:* ${JSON.stringify(changes)}`,
+      `*Changes:* ${changesString}`,
     ]
       .join('\n')
       .slice(0, 4000);
@@ -333,35 +343,26 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     return !!resource.spec.source.directory;
   }
 
-  private isDeploySettled(update: ResourceUpdate, cachedResource: CacheEntry): boolean {
-    return cachedResource.status === ArgoCdHealthStatus.Progressing && update.status !== cachedResource.status;
-  }
+  private generateChangesString(cache: CacheEntry, update: ResourceUpdate): string {
+    const reorganizeSpec = (spec: ArgoCdApplicationSpec) => {
+      const { syncPolicy: _, source, ...restSpec } = spec;
+      const { repoURL, targetRevision, chart, helm, ...restSource } = source;
 
-  private createChangeDescription(
-    prev: string | undefined,
-    current: string | undefined,
-    emoji: string = '',
-    markDownTag: string = '',
-  ): string {
-    const currentFormattedVersion = `${emoji} ${markDownTag}${current || '?'}${markDownTag}`;
-    if (prev !== current) {
-      return `${emoji} ${markDownTag}${prev || '?'}${markDownTag} → ${currentFormattedVersion}`;
-    }
-    return currentFormattedVersion;
-  }
+      return {
+        source: {
+          repoURL,
+          targetRevision,
+          chart,
+          helm,
+          ...restSource,
+        },
+        ...restSpec,
+      };
+    };
 
-  private getChanges(cachedResource: CacheEntry, update: ResourceUpdate): ChangesObject {
-    return filterChanges<ChangesObject>(
-      { valuesObject: update.valuesObject, targetRevision: update.targetRevision },
-      { valuesObject: cachedResource.valuesObject, targetRevision: cachedResource.targetRevision },
-    );
-  }
+    const cacheObject = reorganizeSpec(cache.spec);
+    const updateObject = reorganizeSpec(update.spec);
 
-  private isSyncStatusChanged(cachedResource: CacheEntry, update: ResourceUpdate): boolean {
-    return cachedResource.sync !== update.sync;
-  }
-
-  private isHealthStatusChanged(cachedResource: CacheEntry, update: ResourceUpdate): boolean {
-    return cachedResource.status !== update.status;
+    return generateReadableDiff(cacheObject, updateObject, { contextLines: 2, numberLines: true });
   }
 }
