@@ -35,6 +35,7 @@
     "@kubernetes/client-node": "^0.21.0",
     "@slack/web-api": "^7.3.4",
     "croner": "^8.1.1",
+    "diff": "^6.0.0-beta",
     "dotenv": "^16.4.5",
     "env-var": "^7.5.0",
     "express": "^4.19.2",
@@ -46,6 +47,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
+    "@types/diff": "^5.2.2",
     "@types/eslint__js": "^8.42.3",
     "@types/express": "^4",
     "@types/node": "^22.5.0",
