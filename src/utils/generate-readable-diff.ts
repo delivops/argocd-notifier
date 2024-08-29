@@ -1,10 +1,17 @@
 import * as Diff from 'diff';
 import * as YAML from 'yaml';
 
-interface DiffOptions {
+/**
+ * Options for customizing the diff output.
+ */
+export interface DiffOptions {
+  /** Number of context lines to show around changes. Default is 4. */
   contextLines?: number;
+  /** Separator string used between diff chunks. Default is '...' repeated 3 times. */
   separator?: string;
+  /** Stringifier to use for non-string inputs. Can be 'YAML' or 'JSON'. Default is 'YAML'. */
   stringifier?: 'YAML' | 'JSON';
+  /** Whether to number lines in the output. Default is true. */
   numberLines?: boolean;
 }
 
@@ -15,7 +22,15 @@ const DEFAULT_OPTIONS: Required<DiffOptions> = {
   numberLines: true,
 };
 
-function generateReadableDiff(original: unknown, updated: unknown, options: DiffOptions = {}): string {
+/**
+ * Generates a readable diff between two values.
+ *
+ * @param original - The original value to compare.
+ * @param updated - The updated value to compare against the original.
+ * @param options - Options to customize the diff output.
+ * @returns A string containing the formatted diff.
+ */
+export function generateReadableDiff(original: unknown, updated: unknown, options: DiffOptions = {}): string {
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
   const { contextLines, separator, stringifier, numberLines } = mergedOptions;
 
@@ -35,6 +50,14 @@ interface LineNumbers {
   right: number | null;
 }
 
+/**
+ * Formats the diff text with optional line numbers and separators.
+ *
+ * @param diff - The raw diff text.
+ * @param separator - The separator string to use between chunks.
+ * @param shouldNumberLines - Whether to include line numbers.
+ * @returns The formatted diff string.
+ */
 function formatDiff(diff: string, separator: string, shouldNumberLines: boolean): string {
   const lines = diff.split('\n').slice(3);
   const maxLineNumber = getMaxLineNumber(lines);
@@ -66,6 +89,12 @@ function formatDiff(diff: string, separator: string, shouldNumberLines: boolean)
   return formattedLines.join('\n');
 }
 
+/**
+ * Calculates the maximum line number in the diff.
+ *
+ * @param lines - The lines of the diff.
+ * @returns The maximum line number.
+ */
 function getMaxLineNumber(lines: string[]): number {
   let max = 0;
   for (const line of lines) {
@@ -79,12 +108,26 @@ function getMaxLineNumber(lines: string[]): number {
   return max;
 }
 
+/**
+ * Formats a single line of the diff with line numbers.
+ *
+ * @param line - The line to format.
+ * @param lineNumbers - The current line numbers.
+ * @param padWidth - The width to pad the line numbers to.
+ * @returns The formatted line.
+ */
 function formatLine(line: string, lineNumbers: LineNumbers, padWidth: number): string {
   const leftNum = lineNumbers.left !== null ? lineNumbers.left.toString().padStart(padWidth) : ' '.repeat(padWidth);
   const rightNum = lineNumbers.right !== null ? lineNumbers.right.toString().padStart(padWidth) : ' '.repeat(padWidth);
   return `${leftNum} ${rightNum} ${line}`;
 }
 
+/**
+ * Updates the line numbers based on the type of the current line.
+ *
+ * @param lineNumbers - The current line numbers.
+ * @param lineType - The type of the current line ('+', '-', or ' ').
+ */
 function updateLineNumbers(lineNumbers: LineNumbers, lineType: string): void {
   switch (lineType) {
     case ' ':
@@ -99,5 +142,3 @@ function updateLineNumbers(lineNumbers: LineNumbers, lineType: string): void {
       break;
   }
 }
-
-export { DiffOptions, generateReadableDiff };
