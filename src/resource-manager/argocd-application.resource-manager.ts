@@ -216,7 +216,12 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   }
 
   private async sendSlackMessage(text: string, blocks: KnownBlock[]): Promise<{ ts?: string } | undefined> {
-    return this.slackClient?.chat.postMessage({
+    if (!this.slackClient) {
+      logger.verbose(`"blocks": ${JSON.stringify(blocks)}`);
+      return;
+    }
+
+    return this.slackClient.chat.postMessage({
       icon_url: 'https://argo-cd.readthedocs.io/en/stable/assets/logo.png',
       text,
       unfurl_links: false,
@@ -230,7 +235,12 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     blocks: KnownBlock[],
     ts: string,
   ): Promise<{ ts?: string } | undefined> {
-    return this.slackClient?.chat.update({
+    if (!this.slackClient) {
+      logger.verbose(`"blocks": ${JSON.stringify(blocks)}`);
+      return;
+    }
+
+    return this.slackClient.chat.update({
       text,
       blocks,
       channel: slack_config.CHANNEL_ID,
@@ -280,11 +290,11 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     if (isLink) {
       elements.push({
         type: 'link',
-        text: !targetNamespace ? `${name} / ${targetNamespace}` : name,
+        text: targetNamespace ? `${name} / ${targetNamespace}` : name,
         url: argo_config.url!,
         style: { bold: true },
       });
-      if (targetNamespace) {
+      if (!targetNamespace) {
         elements.push({
           type: 'text',
           text: ' / Clustered Resource',
