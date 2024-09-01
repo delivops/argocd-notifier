@@ -4,7 +4,7 @@ import type { CrdConfig } from '@/interfaces/crd-config.interface';
 import type { K8sListResponseBody, K8sResponseObject } from '@/interfaces/custom-object-body.interface';
 import type { EntityNextGen } from '@/interfaces/entity-next-gen';
 import type { K8sResponseError } from '@/interfaces/k8s-response-error.interfaces';
-import { logger } from '@/logger';
+import { logger } from '@/utils/logger';
 import { type CustomObjectsApi } from '@kubernetes/client-node';
 
 export class CustomResourceUtils {

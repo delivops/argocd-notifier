@@ -2,9 +2,9 @@ import { RefinedEventType } from '@/enums/refined-event-type.enum';
 import type { CrdConfig } from '@/interfaces/crd-config.interface';
 import type { CustomResource } from '@/interfaces/custom-resource.interface';
 import type { ResourceEvent } from '@/interfaces/resource-event.interface';
-import { logger } from '@/logger';
 import { getRefinedEventType } from '@/utils/get-refined-event-type';
 import { CustomResourceUtils } from '@/utils/k8s/custom-resource.k8s.utils';
+import { logger } from '@/utils/logger';
 import type { CoreV1Api, CustomObjectsApi } from '@kubernetes/client-node';
 
 export abstract class BaseResourceManager {

@@ -29,7 +29,11 @@
     "packages:update:minor": "yarn dlx npm-check-updates -u --target minor",
     "update-yarn": "yarn set version latest && yarn install",
     "upgrade-node": "bash ./scripts/upgrade-node-lts-latest.sh --update-dockerfiles",
-    "upgrade-all": "yarn update-yarn && yarn packages:update:minor && yarn upgrade-node"
+    "upgrade-all": "yarn update-yarn && yarn packages:update:minor && yarn upgrade-node",
+    "=== test ===": "=== test ===",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest --coverage"
   },
   "dependencies": {
     "@kubernetes/client-node": "^0.21.0",
@@ -51,6 +55,7 @@
     "@types/eslint__js": "^8.42.3",
     "@types/express": "^4",
     "@types/node": "^22.5.0",
+    "@vitest/coverage-v8": "^2.0.5",
     "eslint": "^9.9.1",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
@@ -61,7 +66,8 @@
     "prettier": "^3.3.3",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.5.4",
-    "typescript-eslint": "^8.3.0"
+    "typescript-eslint": "^8.3.0",
+    "vitest": "^2.0.5"
   },
   "engines": {
     "node": ">=20.0.0"

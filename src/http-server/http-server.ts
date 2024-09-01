@@ -1,7 +1,7 @@
+import { logger } from '@/utils/logger';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import http, { type Server } from 'http';
-import { logger } from './logger';
 
 export class HealthCheckServer {
   private static app: Express | null = null;

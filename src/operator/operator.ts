@@ -1,17 +1,17 @@
+import { argo_config } from '@/config/app.config';
+import type { ArgoCdKind } from '@/dtos/argocd-application.dto';
+import { Scope } from '@/enums/scope.enum';
+import type { Logger } from '@/interfaces/logger.interface';
+import type { OperatorResource } from '@/interfaces/operator-resources.interface';
+import type { ResourceEvent } from '@/interfaces/resource-event.interface';
+import { CustomResourceOperator } from '@/operator/custom-resource-operator';
+import type { BaseResourceManager } from '@/resource-manager/base.resource-manager';
+import { logger } from '@/utils/logger';
 import { CoreV1Api, CustomObjectsApi, KubeConfig } from '@kubernetes/client-node';
 import { ActionOnInvalid } from '@kubernetes/client-node/dist/config_types';
 import Cron, { type CronOptions } from 'croner';
-import { argo_config } from './config/app.config';
-import { CustomResourceOperator } from './custom-resource-operator/custom-resource-operator';
-import type { ArgoCdKind } from './dtos/argocd-application.dto';
-import { Scope } from './enums/scope.enum';
-import type { Logger } from './interfaces/logger.interface';
-import type { OperatorResource } from './interfaces/operator-resources.interface';
-import type { ResourceEvent } from './interfaces/resource-event.interface';
-import { logger } from './logger';
-import type { BaseResourceManager } from './resource-manager/base.resource-manager';
 
-export class VopsOperator extends CustomResourceOperator {
+export class Operator extends CustomResourceOperator {
   private readonly k8sApi: CoreV1Api;
   private readonly customObjectsApiClient: CustomObjectsApi;
   private readonly resourceManagers: Record<typeof ArgoCdKind, BaseResourceManager> = {} as Record<
@@ -21,7 +21,7 @@ export class VopsOperator extends CustomResourceOperator {
   private readonly cronJobs: Record<typeof ArgoCdKind, Cron> = {} as Record<typeof ArgoCdKind, Cron>;
 
   constructor(
-    private readonly resources: OperatorResource[],
+    private readonly resources: OperatorResource[] | OperatorResource,
     logger: Logger,
   ) {
     super(logger);
@@ -34,8 +34,12 @@ export class VopsOperator extends CustomResourceOperator {
   }
 
   protected async init() {
-    for (const resource of this.resources) {
-      await this.setupResource(resource);
+    if (Array.isArray(this.resources)) {
+      for (const resource of this.resources) {
+        await this.setupResource(resource);
+      }
+    } else {
+      await this.setupResource(this.resources);
     }
   }
 
