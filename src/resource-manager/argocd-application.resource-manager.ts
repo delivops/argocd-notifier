@@ -262,7 +262,6 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
           ...(changesString ? [this.createChangesBlock(changesString)] : []),
         ],
       },
-      { type: 'divider' },
     ];
 
     return blocks;
