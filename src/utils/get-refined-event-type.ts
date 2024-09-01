@@ -1,6 +1,6 @@
 import { RefinedEventType } from '@/enums/refined-event-type.enum';
 import { ResourceEventType } from '@/enums/resource-event-type.enum';
-import { ResourceEvent } from '@/interfaces/resource-event.interface';
+import type { ResourceEvent } from '@/interfaces/resource-event.interface';
 
 export const getRefinedEventType = (event: ResourceEvent): RefinedEventType => {
   if (event.type === ResourceEventType.Deleted) {

@@ -1,16 +1,16 @@
-import { HealthCheckServer } from './http-server';
-import { logger } from './logger';
-import { operatorResources } from './operator-resources';
-import { VopsOperator } from './vops-operator';
+import { HealthCheckServer } from '@/http-server/http-server';
+import { Operator } from '@/operator/operator';
+import { logger } from '@/utils/logger';
+import { argocdResource } from './argocd-resource';
 
-const operator = new VopsOperator(operatorResources, logger);
-void operator.start();
+const argocdOperator = new Operator(argocdResource, logger);
+void argocdOperator.start();
 
 HealthCheckServer.start();
 
 const exit = async (signal: string) => {
   logger.info(`Exiting: received ${signal}`);
-  operator.stop();
+  argocdOperator.stop();
   await HealthCheckServer.stop();
   process.exit(0);
 };
