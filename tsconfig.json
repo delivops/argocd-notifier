@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "lib": ["ESNext", "dom"],
+    "declaration": false,
+    "removeComments": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ESNext",
+    "sourceMap": true,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "moduleResolution": "NodeNext",
+    "noImplicitAny": false,
+    "preserveSymlinks": true,
+    "paths": { "@/*": ["src/*"] }
+  },
+  "include": ["./src/**/*"],
+  "exclude": ["node_modules", "dist"], // add "test", "**/*.spec.ts" for build
+  "ts-node": {
+    // It is faster to skip typechecking.
+    // Remove if you want ts-node to do typechecking.
+    "transpileOnly": true
+  }
+}

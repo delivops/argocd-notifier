@@ -1,0 +1,6 @@
+'**/*.{ts,tsx}':
+  - 'yarn prettier --write --log-level warn'
+  - 'yarn eslint --fix'
+
+'**/*':
+  - 'yarn prettier --ignore-unknown --write'

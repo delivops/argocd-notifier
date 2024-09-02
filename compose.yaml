@@ -1,0 +1,9 @@
+name: argocd-notifier
+
+services:
+  argocd-notifier:
+    build:
+      context: '.'
+      dockerfile: 'Dockerfile'
+    env_file:
+      - '.env'

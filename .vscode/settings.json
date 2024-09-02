@@ -1,0 +1,39 @@
+{
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": "../.github/workflows/build.yml"
+  },
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.sortImports": "explicit"
+  },
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "debug.javascript.autoAttachFilter": "onlyWithFlag",
+  "[shellscript]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
+  },
+  "[dotenv]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
+  },
+  "[ignore]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
+  },
+  "[dockerfile]": {
+    "editor.defaultFormatter": "ms-azuretools.vscode-docker"
+  },
+  "search.exclude": {
+    "**/dist": true,
+    "**/.yarn": true,
+    "**/.pnp.*": true
+  },
+  "typescript.preferences.quoteStyle": "single",
+  "prettier.configPath": ".prettierrc.yaml",
+  "prettier.useEditorConfig": false,
+  "cSpell.diagnosticLevel": "Hint",
+  "editor.foldingImportsByDefault": false,
+  "typescript.preferences.preferTypeOnlyAutoImports": true,
+  "eslint.nodePath": ".yarn/sdks",
+  "prettier.prettierPath": ".yarn/sdks/prettier/index.cjs",
+  "typescript.tsdk": ".yarn/sdks/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "cSpell.words": ["argocd", "dockerfiles", "dtos", "stringifier"]
+}
