@@ -5,9 +5,8 @@ on:
       - main
   workflow_dispatch:
 
-# permissions:
-#   id-token: write
-#   contents: write
+permissions:
+  issues: write
 
 jobs:
   bump-version:
