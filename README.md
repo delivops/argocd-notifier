@@ -9,7 +9,7 @@ The ArgoCD Watcher Notifier is a service that monitors ArgoCD applications and s
 To use the Slack integration, you need to create a Slack app and generate an API token. Follow these steps to create a Slack app:
 
 1. Go to the [Slack API](https://api.slack.com/apps) page.
-2. Click on the "Create New App" button.
+2. Click on the "Create New App" button. Select the workspace where you want to install the app (optional).
 3. Choose "From a manifest", select YAML, and paste the following code:
 
 ```yaml
@@ -31,6 +31,10 @@ settings:
   socket_mode_enabled: false
   token_rotation_enabled: false
 ```
+
+4. Click on the "Next" then on the "Create" button. You will be redirected to the app settings page.
+5. Go to "Install App" section and click on the "Install to \[Workspace\]" button.
+6. Choose a channel where you want to send notifications. Click on the "Allow" button.
 
 ## Environment Variables
 
