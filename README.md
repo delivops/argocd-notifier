@@ -4,6 +4,38 @@
 
 The ArgoCD Watcher Notifier is a service that monitors ArgoCD applications and sends notifications to Slack based on the health and sync status of the applications. It uses environment variables for configuration and can be run locally or in a Docker container.
 
+## Create a Slack App
+
+To use the Slack integration, you need to create a Slack app and generate an API token. Follow these steps to create a Slack app:
+
+1. Go to the [Slack API](https://api.slack.com/apps) page.
+2. Click on the "Create New App" button. Select the workspace where you want to install the app (optional).
+3. Choose "From a manifest", select YAML, and paste the following code:
+
+```yaml
+display_information:
+  name: ArgoCD Notifier
+features:
+  bot_user:
+    display_name: ArgoCD Notifier
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - incoming-webhook
+      - chat:write
+      - chat:write.customize
+      - chat:write.public
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
+```
+
+4. Click on the "Next" then on the "Create" button. You will be redirected to the app settings page.
+5. Go to "Install App" section and click on the "Install to \[Workspace\]" button.
+6. Choose a channel where you want to send notifications. Click on the "Allow" button.
+
 ## Environment Variables
 
 The application requires the following environment variables to be set:
