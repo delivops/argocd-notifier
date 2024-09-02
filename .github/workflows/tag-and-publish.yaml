@@ -3,6 +3,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'tsconfig.json'
+      - 'package.json'
+      - 'yarn.lock'
+      - 'Dockerfile'
+      - 'vite.config.ts'
   workflow_dispatch:
 
 permissions:
