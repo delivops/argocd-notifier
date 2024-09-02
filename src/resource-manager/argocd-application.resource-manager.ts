@@ -273,17 +273,20 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
     update: ResourceUpdate,
   ): RichTextBlockElement {
     const { status, sync } = update;
-    const environmentIndicator = process.env.NODE_ENV === 'production' ? '' : ' (DEV) ';
+    const environmentIndicator = process.env.NODE_ENV === 'production' ? '' : '(DEV)';
     const isLink = !!argo_config.url;
+
+    const delimiter: RichTextElement = { type: 'text', text: ' ' };
 
     const elements: RichTextElement[] = [
       { type: 'emoji', name: this.getStatusEmoji(status, false) },
-      { type: 'text', text: ' ' },
+      delimiter,
       { type: 'emoji', name: this.getStatusEmoji(sync, false) },
+      delimiter,
     ];
 
     if (environmentIndicator) {
-      elements.push({ type: 'text', text: environmentIndicator });
+      elements.push({ type: 'text', text: environmentIndicator }, delimiter);
     }
 
     if (isLink) {
