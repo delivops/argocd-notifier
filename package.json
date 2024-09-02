@@ -31,7 +31,7 @@
     "upgrade-node": "bash ./scripts/upgrade-node-lts-latest.sh --update-dockerfiles",
     "upgrade-all": "yarn update-yarn && yarn packages:update:minor && yarn upgrade-node",
     "=== test ===": "=== test ===",
-    "test": "vitest",
+    "test": "vitest run",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage"
   },

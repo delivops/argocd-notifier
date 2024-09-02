@@ -1,0 +1,32 @@
+name: Test ArgoCD Notifier
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# permissions:
+#   id-token: write
+#   checks: write
+#   contents: read
+#   issues: write
+#   pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: github.env.IS_ORIGIN
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'yarn'
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      - name: Run tests
+        run: yarn test
