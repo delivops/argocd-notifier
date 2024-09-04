@@ -33,8 +33,8 @@
     "=== test ===": "=== test ===",
     "test": "vitest run",
     "test:watch": "vitest --watch",
-    "test:coverage": "vitest --coverage",
-    "test:coverage:badge": "yarn coverage-badges-cli --output ./badges/coverage.svg"
+    "test:coverage": "vitest run --coverage",
+    "test:coverage:badge": "yarn test:coverage && yarn coverage-badges-cli --output ./badges/coverage.svg"
   },
   "dependencies": {
     "@kubernetes/client-node": "^0.21.0",

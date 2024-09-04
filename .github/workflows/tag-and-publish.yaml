@@ -23,11 +23,13 @@ jobs:
     if: ${{ github.event.repository.name == 'argocd-notifier' }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Bump version and push tag
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create a GitHub release
         uses: ncipollo/release-action@v1
         with:
@@ -42,12 +44,14 @@ jobs:
     needs: [bump-version]
     steps:
       - uses: actions/checkout@v4
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
