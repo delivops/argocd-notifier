@@ -1,5 +1,7 @@
 # ArgoCD Watcher Notifier
 
+![Coverage Badge](badges/coverage.svg)
+
 ## Overview
 
 The ArgoCD Watcher Notifier is a service that monitors ArgoCD applications and sends notifications to Slack based on the health and sync status of the applications. It uses environment variables for configuration and can be run locally or in a Docker container.
