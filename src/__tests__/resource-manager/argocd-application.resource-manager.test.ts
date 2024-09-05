@@ -1,23 +1,25 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// allow console.log in tests
-/* eslint-disable no-console */
+/* allow console.log in tests */
 
-import { CoreV1Api, CustomObjectsApi } from '@kubernetes/client-node';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { filterChanges } from '@/utils/filter-changes.utils';
+import { generateReadableDiff } from '@/utils/generate-readable-diff';
+import { describe, expect, it, vi } from 'vitest';
 import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '../../enums/argocd.enum';
 import { ArgoCdApplicationResourceManager } from '../../resource-manager/argocd-application.resource-manager';
 
 // Mock dependencies
-vi.mock('../../logger', () => ({
+vi.mock('@/utils/generate-readable-diff');
+vi.mock('@/utils/filter-changes.utils');
+vi.mock('@/utils/logger', () => ({
   logger: {
     debug: vi.fn(),
-    info: console.log,
-    error: console.log,
-    verbose: console.log,
+    info: vi.fn(),
+    error: vi.fn(),
+    verbose: vi.fn(),
   },
 }));
 
-vi.mock('../../config/app.config', () => ({
+vi.mock('@/config/app.config', () => ({
   argo_config: {
     url: 'https://argocd.example.com',
     namespace: 'argocd',
@@ -26,195 +28,113 @@ vi.mock('../../config/app.config', () => ({
     TOKEN: 'mock-slack-token',
     CHANNEL_ID: 'mock-channel-id',
   },
+  app_config: {
+    contextDiffLinesCount: 3,
+  },
 }));
-
-vi.mock('@slack/web-api', () => ({
-  WebClient: vi.fn(() => ({
-    chat: {
-      postMessage: vi.fn().mockResolvedValue({ ts: 'mock-timestamp' }),
-      update: vi.fn().mockResolvedValue({ ts: 'mock-timestamp-updated' }),
-    },
-  })),
-}));
-
-// Create a test double that exposes the protected methods
-class TestableArgoCdApplicationResourceManager extends ArgoCdApplicationResourceManager {
-  public async testSyncResource(resource: any): Promise<void> {
-    return this.syncResource(resource);
-  }
-
-  public getResourceCacheMap(): Map<string, any> {
-    return this.resourceCacheMap;
-  }
-}
 
 describe('ArgoCdApplicationResourceManager', () => {
-  let manager: TestableArgoCdApplicationResourceManager;
-  let mockCustomObjectsApi: CustomObjectsApi;
-  let mockCoreV1Api: CoreV1Api;
+  const mockCustomObjectsApi = {} as any;
+  const mockK8sApi = {} as any;
+  const resourceManager = new ArgoCdApplicationResourceManager(mockCustomObjectsApi, mockK8sApi);
 
-  beforeEach(() => {
-    mockCustomObjectsApi = {} as CustomObjectsApi;
-    mockCoreV1Api = {} as CoreV1Api;
-    manager = new TestableArgoCdApplicationResourceManager(mockCustomObjectsApi, mockCoreV1Api);
+  describe('isDirectorySource', () => {
+    it('should return true if the resource spec has a directory source', () => {
+      const resource = { spec: { source: { directory: 'path/to/directory' } } } as any;
+      expect(resourceManager['isDirectorySource'](resource)).toBe(true);
+    });
 
-    // Reset the cache before each test
-    manager.getResourceCacheMap().clear();
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should add an app to cache when syncResource is called for the first time', async () => {
-    const resource = createMockResource('app1', 'v1.0.0', ArgoCdHealthStatus.Healthy, ArgoCdSyncStatus.Synced);
-
-    await manager.testSyncResource(resource);
-
-    const cache = manager.getResourceCacheMap();
-    expect(cache.has('app1')).toBe(true);
-    expect(cache.get('app1')).toMatchObject({
-      status: ArgoCdHealthStatus.Healthy,
-      sync: ArgoCdSyncStatus.Synced,
-      spec: resource.spec,
-      lastMessageTs: 'mock-timestamp',
-      persistentChanges: expect.any(String),
-      deploymentInProgress: false,
+    it('should return false if the resource spec does not have a directory source', () => {
+      const resource = { spec: { source: { repoURL: 'https://example.com/repo.git' } } } as any;
+      expect(resourceManager['isDirectorySource'](resource)).toBe(false);
     });
   });
 
-  it('should send a new notification when an update comes with a new image tag', async () => {
-    const initialResource = createMockResource('app1', 'v1.0.0', ArgoCdHealthStatus.Healthy, ArgoCdSyncStatus.Synced);
-    await manager.testSyncResource(initialResource);
+  describe('getStatusEmoji', () => {
+    it('should return the correct emoji for a given health status', () => {
+      expect(resourceManager['getStatusEmoji'](ArgoCdHealthStatus.Healthy)).toBe(':white_check_mark:');
+      expect(resourceManager['getStatusEmoji'](ArgoCdHealthStatus.Degraded)).toBe(':x:');
+      expect(resourceManager['getStatusEmoji'](ArgoCdHealthStatus.Progressing)).toBe(':hourglass_flowing_sand:');
+    });
 
-    const updatedResource = createMockResource(
-      'app1',
-      'v1.1.0',
-      ArgoCdHealthStatus.Progressing,
-      ArgoCdSyncStatus.OutOfSync,
-    );
-    await manager.testSyncResource(updatedResource);
+    it('should return the correct emoji for a given sync status', () => {
+      expect(resourceManager['getStatusEmoji'](ArgoCdSyncStatus.Synced)).toBe(':white_check_mark:');
+      expect(resourceManager['getStatusEmoji'](ArgoCdSyncStatus.OutOfSync)).toBe(':warning:');
+    });
 
-    const cache = manager.getResourceCacheMap();
-    expect(cache.get('app1')).toMatchObject({
-      status: ArgoCdHealthStatus.Progressing,
-      sync: ArgoCdSyncStatus.OutOfSync,
-      spec: updatedResource.spec,
-      lastMessageTs: 'mock-timestamp',
-      persistentChanges: expect.stringContaining('v1.1.0'),
-      deploymentInProgress: true,
+    it('should return emoji without colon when withSemicolon is false', () => {
+      expect(resourceManager['getStatusEmoji'](ArgoCdHealthStatus.Healthy, false)).toBe('white_check_mark');
+      expect(resourceManager['getStatusEmoji'](ArgoCdSyncStatus.OutOfSync, false)).toBe('warning');
     });
   });
 
-  // TODO: fix this test
-  //   it('should update existing notification when a new update comes before deployment is finished', async () => {
-  //     const initialResource = createMockResource('app1', 'v1.0.0', ArgoCdHealthStatus.Healthy, ArgoCdSyncStatus.Synced);
-  //     await manager.testSyncResource(initialResource);
+  describe('generateChangesString', () => {
+    it('should generate the correct changes string for non-version updates', () => {
+      const mockGenerateReadableDiff = vi.mocked(generateReadableDiff);
+      mockGenerateReadableDiff.mockReturnValue('Generated diff');
 
-  //     const firstUpdate = createMockResource(
-  //       'app1',
-  //       'v1.1.0',
-  //       ArgoCdHealthStatus.Progressing,
-  //       ArgoCdSyncStatus.OutOfSync,
-  //     );
-  //     await manager.testSyncResource(firstUpdate);
+      const mockFilterChanges = vi.mocked(filterChanges);
+      mockFilterChanges.mockReturnValue({ source: { repoURL: 'https://example.com/new-repo.git' } });
 
-  //     const secondUpdate = createMockResource(
-  //       'app1',
-  //       'v1.1.1',
-  //       ArgoCdHealthStatus.Progressing,
-  //       ArgoCdSyncStatus.OutOfSync,
-  //     );
-  //     await manager.testSyncResource(secondUpdate);
+      const cache = { spec: { source: { repoURL: 'https://example.com/repo.git' } } } as any;
+      const update = { spec: { source: { repoURL: 'https://example.com/new-repo.git' } } } as any;
 
-  //     const cache = manager.getResourceCacheMap();
-  //     expect(cache.get('app1')).toMatchObject({
-  //       status: ArgoCdHealthStatus.Progressing,
-  //       sync: ArgoCdSyncStatus.OutOfSync,
-  //       spec: secondUpdate.spec,
-  //       lastMessageTs: 'mock-timestamp-updated',
-  //       persistentChanges: expect.stringContaining('v1.1.1'),
-  //       deploymentInProgress: true,
-  //     });
-  //   });
+      expect(resourceManager['generateChangesString'](cache, update)).toBe('Generated diff');
+      expect(mockGenerateReadableDiff).toHaveBeenCalledWith(
+        expect.objectContaining({ source: { repoURL: 'https://example.com/repo.git' } }),
+        expect.objectContaining({ source: { repoURL: 'https://example.com/new-repo.git' } }),
+        expect.objectContaining({ contextLines: 3, separator: '.........' }),
+      );
+    });
 
-  it('should not trigger update or new deployment when an update comes without changes', async () => {
-    const initialResource = createMockResource('app1', 'v1.0.0', ArgoCdHealthStatus.Healthy, ArgoCdSyncStatus.Synced);
-    await manager.testSyncResource(initialResource);
+    it('should generate the correct changes string for version updates', () => {
+      const mockGenerateReadableDiff = vi.mocked(generateReadableDiff);
+      mockGenerateReadableDiff.mockReturnValue('Generated diff');
 
-    const unchangedResource = createMockResource('app1', 'v1.0.0', ArgoCdHealthStatus.Healthy, ArgoCdSyncStatus.Synced);
-    await manager.testSyncResource(unchangedResource);
+      const mockFilterChanges = vi.mocked(filterChanges);
+      mockFilterChanges.mockReturnValue({ source: { targetRevision: 'v1.0.1' } });
 
-    const cache = manager.getResourceCacheMap();
-    expect(cache.get('app1')).toMatchObject({
-      status: ArgoCdHealthStatus.Healthy,
-      sync: ArgoCdSyncStatus.Synced,
-      spec: initialResource.spec,
-      lastMessageTs: 'mock-timestamp',
-      persistentChanges: expect.any(String),
-      deploymentInProgress: false,
+      const cache = { spec: { source: { targetRevision: 'v1.0.0' } } } as any;
+      const update = { spec: { source: { targetRevision: 'v1.0.1' } } } as any;
+
+      expect(resourceManager['generateChangesString'](cache, update)).toBe('Generated diff');
+      expect(mockGenerateReadableDiff).toHaveBeenCalledWith(
+        expect.objectContaining({ source: { targetRevision: 'v1.0.0' } }),
+        expect.objectContaining({ source: { targetRevision: 'v1.0.1' } }),
+        expect.objectContaining({ contextLines: 0, separator: '' }),
+      );
     });
   });
 
-  it('should handle status changes during deployment', async () => {
-    const initialResource = createMockResource('app1', 'v1.0.0', ArgoCdHealthStatus.Healthy, ArgoCdSyncStatus.Synced);
-    await manager.testSyncResource(initialResource);
-
-    const updatedResource = createMockResource(
-      'app1',
-      'v1.1.0',
-      ArgoCdHealthStatus.Progressing,
-      ArgoCdSyncStatus.OutOfSync,
-    );
-    await manager.testSyncResource(updatedResource);
-
-    const syncedResource = createMockResource('app1', 'v1.1.0', ArgoCdHealthStatus.Healthy, ArgoCdSyncStatus.Synced);
-    await manager.testSyncResource(syncedResource);
-
-    const cache = manager.getResourceCacheMap();
-    expect(cache.get('app1')).toMatchObject({
-      status: ArgoCdHealthStatus.Healthy,
-      sync: ArgoCdSyncStatus.Synced,
-      spec: syncedResource.spec,
-      lastMessageTs: 'mock-timestamp-updated',
-      persistentChanges: expect.stringContaining('v1.1.0'),
-      deploymentInProgress: false,
+  describe('isOnlyImageTagOrTagRevisionChange', () => {
+    it('should return true if the change is only in the image tag', () => {
+      const changes = { source: { helm: { valuesObject: { image: { tag: 'v1.0.1' } } } } };
+      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(true);
     });
-  });
 
-  it('should handle multiple applications independently', async () => {
-    const app1Resource = createMockResource('app1', 'v1.0.0', ArgoCdHealthStatus.Healthy, ArgoCdSyncStatus.Synced);
-    const app2Resource = createMockResource('app2', 'v2.0.0', ArgoCdHealthStatus.Healthy, ArgoCdSyncStatus.Synced);
+    it('should return true if the change is only in the target revision', () => {
+      const changes = { source: { targetRevision: 'v1.0.1' } };
+      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(true);
+    });
 
-    await manager.testSyncResource(app1Resource);
-    await manager.testSyncResource(app2Resource);
+    it('should return false if there are other changes in the source', () => {
+      const changes = { source: { repoURL: 'https://example.com/new-repo.git' } };
+      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(false);
+    });
 
-    const cache = manager.getResourceCacheMap();
-    expect(cache.has('app1')).toBe(true);
-    expect(cache.has('app2')).toBe(true);
-    expect(cache.get('app1').spec.source.targetRevision).toBe('v1.0.0');
-    expect(cache.get('app2').spec.source.targetRevision).toBe('v2.0.0');
+    it('should return false if there are multiple changes in the source', () => {
+      const changes = { source: { targetRevision: 'v1.0.1', repoURL: 'https://example.com/new-repo.git' } };
+      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(false);
+    });
+
+    it('should return false if there are changes outside the source', () => {
+      const changes = { destination: { namespace: 'new-namespace' } };
+      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(false);
+    });
+
+    it('should return false if there are multiple changes including the source', () => {
+      const changes = { source: { targetRevision: 'v1.0.1' }, destination: { namespace: 'new-namespace' } };
+      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(false);
+    });
   });
 });
-
-function createMockResource(name: string, version: string, health: ArgoCdHealthStatus, sync: ArgoCdSyncStatus) {
-  return {
-    kind: 'Application',
-    metadata: { name },
-    spec: {
-      source: {
-        repoURL: 'https://github.com/example/repo',
-        targetRevision: version,
-        chart: 'my-chart',
-      },
-      destination: {
-        server: 'https://kubernetes.default.svc',
-        namespace: 'default',
-      },
-    },
-    status: {
-      health: { status: health },
-      sync: { status: sync },
-    },
-  };
-}

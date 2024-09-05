@@ -1,5 +1,5 @@
 import { argocdResource } from '@/argocd-resource';
-import { argo_config, slack_config } from '@/config/app.config';
+import { app_config, argo_config, slack_config } from '@/config/app.config';
 import { type ArgoCdApplicationDto, type ArgoCdApplicationSpec } from '@/dtos/argocd-application.dto';
 import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '@/enums/argocd.enum';
 import type { CustomResource } from '@/interfaces/custom-resource.interface';
@@ -390,40 +390,46 @@ export class ArgoCdApplicationResourceManager extends BaseResourceManager {
       };
     };
 
-    const cacheObject = reorganizeSpec(cache.spec);
-    const updateObject = reorganizeSpec(update.spec);
+    const cacheObjectSpec = reorganizeSpec(cache.spec);
+    const updateObjectSpec = reorganizeSpec(update.spec);
 
-    const isOnlyVersionUpdate = this.isOnlyImageTagOrTagRevisionChange(cacheObject, updateObject);
+    const changesObjectSpec = filterChanges(updateObjectSpec, cacheObjectSpec);
 
-    const diffString = generateReadableDiff(cacheObject, updateObject, {
-      contextLines: isOnlyVersionUpdate ? 0 : 2,
+    if (Object.keys(changesObjectSpec).length === 0) {
+      return '';
+    }
+
+    const isOnlyVersionUpdate = this.isOnlyImageTagOrTagRevisionChange(changesObjectSpec);
+
+    const diffString = generateReadableDiff(cacheObjectSpec, updateObjectSpec, {
+      contextLines: isOnlyVersionUpdate ? 0 : app_config.contextDiffLinesCount,
       separator: isOnlyVersionUpdate ? '' : '...'.repeat(3),
     });
 
     return diffString.trim();
   }
 
-  private isOnlyImageTagOrTagRevisionChange(
-    cacheSpec: CacheEntry['spec'],
-    updateSpec: ResourceUpdate['spec'],
-  ): boolean {
-    const changesObject = filterChanges(updateSpec, cacheSpec);
-    const changedPaths = Object.keys(changesObject);
+  private isOnlyImageTagOrTagRevisionChange(changesObjectSpec: Record<string, unknown>): boolean {
+    const changedPaths = Object.keys(changesObjectSpec);
 
-    if (changedPaths.length !== 1) return false;
+    if (changedPaths.length !== 1 || changedPaths[0] !== 'source') return false;
 
-    const changedPath = changedPaths[0];
+    const sourceChanges = changesObjectSpec.source as Record<string, unknown>;
+    const sourceChangedKeys = Object.keys(sourceChanges);
 
-    if (changedPath === 'source') {
-      const { targetRevision, helm } = (changesObject.source as Record<string, unknown>) || {};
+    if (sourceChangedKeys.length !== 1) return false;
 
-      if (targetRevision) return true;
+    if (sourceChangedKeys[0] === 'targetRevision') return true;
 
-      if (helm) {
-        const { valuesObject } = helm as Record<string, { image?: object }>;
-        const imageObject = valuesObject?.image || {};
-        return 'tag' in imageObject;
-      }
+    if (sourceChangedKeys[0] === 'helm') {
+      const helm = sourceChanges.helm as Record<string, unknown>;
+      if (!helm.valuesObject) return false;
+
+      const valuesObject = helm.valuesObject as Record<string, unknown>;
+      if (!valuesObject.image) return false;
+
+      const imageObject = valuesObject.image as Record<string, unknown>;
+      return Object.keys(imageObject).length === 1 && 'tag' in imageObject;
     }
 
     return false;

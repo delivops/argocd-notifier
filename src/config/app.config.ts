@@ -13,4 +13,8 @@ export const slack_config = {
     .required(process.env.NODE_ENV === 'production')
     .asString(),
   CHANNEL_ID: env.get('SLACK_CHANNEL_ID').required(!!env.get('SLACK_TOKEN')).asString(),
-};
+} as const;
+
+export const app_config = {
+  contextDiffLinesCount: env.get('CONTEXT_DIFF_LINES_COUNT').default('2').asIntPositive(),
+} as const;
