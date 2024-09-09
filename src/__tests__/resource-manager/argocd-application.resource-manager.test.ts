@@ -32,6 +32,7 @@ class TestArgoCdApplicationResourceManager extends ArgoCdApplicationResourceMana
 }
 
 // Mock dependencies
+vi.mock('@/utils/slack-notifier.utils');
 vi.mock('@/utils/generate-readable-diff');
 vi.mock('@/utils/filter-changes.utils');
 vi.mock('@/utils/logger', () => ({
