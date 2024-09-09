@@ -13,13 +13,13 @@ import { BaseResourceManager } from './base.resource-manager';
 export class ArgoCdApplicationResourceManager extends BaseResourceManager {
   readonly definition = argocdResource.crdConfig;
 
-  private readonly slackClient: WebClient | undefined = slack_config.TOKEN
-    ? new WebClient(slack_config.TOKEN)
+  private readonly slackClient: WebClient | undefined = slack_config.BOT_TOKEN
+    ? new WebClient(slack_config.BOT_TOKEN)
     : undefined;
 
   private readonly cacheManager = new CacheManager();
   private readonly slackNotifier = new SlackNotifier(this.slackClient, slack_config.CHANNEL_ID);
-  private readonly changeDetector = new ChangeDetector(app_config.contextDiffLinesCount);
+  private readonly changeDetector = new ChangeDetector(app_config.CONTEXT_DIFF_LINES_COUNT);
 
   protected async syncResource(resource: ArgoCdResource): Promise<void> {
     const { kind, status, metadata, spec } = resource;

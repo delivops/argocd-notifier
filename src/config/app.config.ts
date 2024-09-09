@@ -8,7 +8,7 @@ export const argo_config = {
 } as const;
 
 export const slack_config = {
-  TOKEN: env
+  BOT_TOKEN: env
     .get('SLACK_BOT_TOKEN')
     .required(process.env.NODE_ENV === 'production')
     .asString(),
@@ -17,8 +17,8 @@ export const slack_config = {
 } as const;
 
 export const app_config = {
-  contextDiffLinesCount: env.get('CONTEXT_DIFF_LINES_COUNT').default('2').asIntPositive(),
-  // ignoreVersionChange: env.get('IGNORE_VERSION_CHANGE').default('false').asBool(),
+  CONTEXT_DIFF_LINES_COUNT: env.get('CONTEXT_DIFF_LINES_COUNT').default('2').asIntPositive(),
+  // IGNORE_VERSION_CHANGE: env.get('IGNORE_VERSION_CHANGE').default('false').asBool(),
 } as const;
 
 // // === additional validation ===
