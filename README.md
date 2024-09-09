@@ -45,8 +45,8 @@ The application requires the following environment variables to be set:
 - `K8S_CRD_GROUP`: The Kubernetes Custom Resource Definition group.
 - `K8S_CRD_VERSION`: The Kubernetes Custom Resource Definition version.
 - `K8S_NAMESPACE`: The Kubernetes namespace.
-- `SLACK_TOKEN`: The Slack API token. Required if you want to use Slack in production.
-- `SLACK_CHANNEL_ID`: The Slack channel ID. Required if SLACK_TOKEN is set.
+- `SLACK_BOT_TOKEN`: The Slack API token. Required if you want to use Slack in production.
+- `SLACK_CHANNEL_ID`: The Slack channel ID. Required if SLACK_BOT_TOKEN is set.
 - `ARGO_CD_URL`: The ArgoCD UI URL.
 
 You can use the `.env.example` file as a template for your `.env` file.
