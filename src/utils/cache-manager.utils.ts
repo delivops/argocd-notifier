@@ -1,17 +1,6 @@
-import { ArgoCdApplicationSpec } from '@/dtos/argocd-application.dto';
-import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '@/enums/argocd.enum';
+import type { CacheEntry } from '@/interfaces/cache-entry.interface';
+import type { ResourceUpdate } from '@/interfaces/resource-update.interface';
 import { logger } from '@/utils/logger';
-
-interface CacheEntry {
-  status: ArgoCdHealthStatus;
-  sync: ArgoCdSyncStatus;
-  spec: ArgoCdApplicationSpec;
-  lastMessageTs: string | undefined;
-  persistentChanges: string;
-  deploymentInProgress: boolean;
-}
-
-type ResourceUpdate = Pick<CacheEntry, 'status' | 'sync' | 'spec'>;
 
 export class CacheManager {
   private readonly resourceCacheMap: Map<string, CacheEntry> = new Map();

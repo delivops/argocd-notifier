@@ -1,11 +1,35 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* allow console.log in tests */
-
-import { filterChanges } from '@/utils/filter-changes.utils';
-import { generateReadableDiff } from '@/utils/generate-readable-diff';
-import { describe, expect, it, vi } from 'vitest';
+import type { ArgoCdResource } from '@/interfaces/argcd-resource.interface';
+import type { CacheEntry } from '@/interfaces/cache-entry.interface';
+import type { ResourceUpdate } from '@/interfaces/resource-update.interface';
+import type { CoreV1Api, CustomObjectsApi } from '@kubernetes/client-node';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ArgoCdHealthStatus, ArgoCdSyncStatus } from '../../enums/argocd.enum';
 import { ArgoCdApplicationResourceManager } from '../../resource-manager/argocd-application.resource-manager';
+
+// Create a subclass of ArgoCdApplicationResourceManager that exposes protected methods for testing
+class TestArgoCdApplicationResourceManager extends ArgoCdApplicationResourceManager {
+  public async testSyncResource(resource: ArgoCdResource): Promise<void> {
+    await this.syncResource(resource);
+  }
+
+  public async testStartNewDeployment(
+    name: string,
+    targetNamespace: string,
+    update: ResourceUpdate,
+    changesString: string,
+  ): Promise<void> {
+    await this.startNewDeployment(name, targetNamespace, update, changesString);
+  }
+
+  public async testUpdateExistingDeployment(
+    name: string,
+    targetNamespace: string,
+    update: ResourceUpdate,
+    changesString: string,
+  ): Promise<void> {
+    await this.updateExistingDeployment(name, targetNamespace, update, changesString);
+  }
+}
 
 // Mock dependencies
 vi.mock('@/utils/generate-readable-diff');
@@ -34,107 +58,181 @@ vi.mock('@/config/app.config', () => ({
 }));
 
 describe('ArgoCdApplicationResourceManager', () => {
-  const mockCustomObjectsApi = {} as any;
-  const mockK8sApi = {} as any;
-  const resourceManager = new ArgoCdApplicationResourceManager(mockCustomObjectsApi, mockK8sApi);
+  const mockCustomObjectsApi = {} as CustomObjectsApi;
+  const mockK8sApi = {} as CoreV1Api;
+  const resourceManager = new TestArgoCdApplicationResourceManager(mockCustomObjectsApi, mockK8sApi);
 
-  describe('isDirectorySource', () => {
-    it('should return true if the resource spec has a directory source', () => {
-      const resource = { spec: { source: { directory: 'path/to/directory' } } } as any;
-      expect(resourceManager['isDirectorySource'](resource)).toBe(true);
-    });
-
-    it('should return false if the resource spec does not have a directory source', () => {
-      const resource = { spec: { source: { repoURL: 'https://example.com/repo.git' } } } as any;
-      expect(resourceManager['isDirectorySource'](resource)).toBe(false);
-    });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(resourceManager['cacheManager'], 'has').mockReturnValue(false);
+    vi.spyOn(resourceManager['cacheManager'], 'initialize').mockResolvedValue(undefined);
   });
 
-  describe('getStatusEmoji', () => {
-    it('should return the correct emoji for a given health status', () => {
-      expect(resourceManager['getStatusEmoji'](ArgoCdHealthStatus.Healthy)).toBe(':white_check_mark:');
-      expect(resourceManager['getStatusEmoji'](ArgoCdHealthStatus.Degraded)).toBe(':x:');
-      expect(resourceManager['getStatusEmoji'](ArgoCdHealthStatus.Progressing)).toBe(':hourglass_flowing_sand:');
+  describe('syncResource', () => {
+    it('should ignore directory sources', async () => {
+      const mockResource = {
+        kind: 'Application',
+        metadata: { name: 'test-app' },
+        spec: { source: { directory: 'path/to/directory' } },
+      } as unknown as ArgoCdResource;
+
+      await resourceManager.testSyncResource(mockResource);
+
+      expect(resourceManager['cacheManager'].has).not.toHaveBeenCalled();
+      expect(resourceManager['cacheManager'].initialize).not.toHaveBeenCalled();
     });
 
-    it('should return the correct emoji for a given sync status', () => {
-      expect(resourceManager['getStatusEmoji'](ArgoCdSyncStatus.Synced)).toBe(':white_check_mark:');
-      expect(resourceManager['getStatusEmoji'](ArgoCdSyncStatus.OutOfSync)).toBe(':warning:');
+    it('should initialize cache for new resources', async () => {
+      const mockResource = {
+        kind: 'Application',
+        metadata: { name: 'test-app' },
+        status: {
+          health: { status: ArgoCdHealthStatus.Healthy },
+          sync: { status: ArgoCdSyncStatus.Synced },
+        },
+        spec: { source: { repoURL: 'https://example.com/repo.git' } },
+      } as ArgoCdResource;
+
+      await resourceManager.testSyncResource(mockResource);
+
+      expect(resourceManager['cacheManager'].initialize).toHaveBeenCalledWith('test-app', {
+        status: ArgoCdHealthStatus.Healthy,
+        sync: ArgoCdSyncStatus.Synced,
+        spec: mockResource.spec,
+      });
     });
 
-    it('should return emoji without colon when withSemicolon is false', () => {
-      expect(resourceManager['getStatusEmoji'](ArgoCdHealthStatus.Healthy, false)).toBe('white_check_mark');
-      expect(resourceManager['getStatusEmoji'](ArgoCdSyncStatus.OutOfSync, false)).toBe('warning');
-    });
-  });
+    it('should handle resource updates for existing resources', async () => {
+      const mockResource = {
+        kind: 'Application',
+        metadata: { name: 'test-app' },
+        status: {
+          health: { status: ArgoCdHealthStatus.Progressing },
+          sync: { status: ArgoCdSyncStatus.OutOfSync },
+        },
+        spec: {
+          source: { repoURL: 'https://example.com/repo.git' },
+          destination: { namespace: 'test-namespace' },
+        },
+      } as ArgoCdResource;
 
-  describe('generateChangesString', () => {
-    it('should generate the correct changes string for non-version updates', () => {
-      const mockGenerateReadableDiff = vi.mocked(generateReadableDiff);
-      mockGenerateReadableDiff.mockReturnValue('Generated diff');
+      vi.spyOn(resourceManager['cacheManager'], 'has').mockReturnValueOnce(true);
+      const handleResourceUpdateSpy = vi
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .spyOn<any, any>(resourceManager, 'handleResourceUpdate')
+        .mockResolvedValue(undefined);
 
-      const mockFilterChanges = vi.mocked(filterChanges);
-      mockFilterChanges.mockReturnValue({ source: { repoURL: 'https://example.com/new-repo.git' } });
+      await resourceManager.testSyncResource(mockResource);
 
-      const cache = { spec: { source: { repoURL: 'https://example.com/repo.git' } } } as any;
-      const update = { spec: { source: { repoURL: 'https://example.com/new-repo.git' } } } as any;
-
-      expect(resourceManager['generateChangesString'](cache, update)).toBe('Generated diff');
-      expect(mockGenerateReadableDiff).toHaveBeenCalledWith(
-        expect.objectContaining({ source: { repoURL: 'https://example.com/repo.git' } }),
-        expect.objectContaining({ source: { repoURL: 'https://example.com/new-repo.git' } }),
-        expect.objectContaining({ contextLines: 3, separator: '.........' }),
+      expect(handleResourceUpdateSpy).toHaveBeenCalledWith(
+        'test-app',
+        {
+          status: ArgoCdHealthStatus.Progressing,
+          sync: ArgoCdSyncStatus.OutOfSync,
+          spec: mockResource.spec,
+        },
+        'test-namespace',
       );
     });
+  });
 
-    it('should generate the correct changes string for version updates', () => {
-      const mockGenerateReadableDiff = vi.mocked(generateReadableDiff);
-      mockGenerateReadableDiff.mockReturnValue('Generated diff');
+  describe('startNewDeployment', () => {
+    it('should create a new Slack message and update the cache', async () => {
+      const mockName = 'test-app';
+      const mockNamespace = 'test-namespace';
+      const mockUpdate = {
+        status: ArgoCdHealthStatus.Progressing,
+        sync: ArgoCdSyncStatus.OutOfSync,
+        spec: { source: { repoURL: 'https://example.com/repo.git' } },
+      };
+      const mockChangesString = 'Generated changes';
+      const mockSlackResponse = { ts: 'mock-timestamp' };
 
-      const mockFilterChanges = vi.mocked(filterChanges);
-      mockFilterChanges.mockReturnValue({ source: { targetRevision: 'v1.0.1' } });
+      vi.spyOn(resourceManager['slackNotifier'], 'createMessage').mockResolvedValueOnce(mockSlackResponse);
+      vi.spyOn(resourceManager['cacheManager'], 'update').mockReturnValue();
 
-      const cache = { spec: { source: { targetRevision: 'v1.0.0' } } } as any;
-      const update = { spec: { source: { targetRevision: 'v1.0.1' } } } as any;
+      await resourceManager.testStartNewDeployment(
+        mockName,
+        mockNamespace,
+        mockUpdate as ResourceUpdate,
+        mockChangesString,
+      );
 
-      expect(resourceManager['generateChangesString'](cache, update)).toBe('Generated diff');
-      expect(mockGenerateReadableDiff).toHaveBeenCalledWith(
-        expect.objectContaining({ source: { targetRevision: 'v1.0.0' } }),
-        expect.objectContaining({ source: { targetRevision: 'v1.0.1' } }),
-        expect.objectContaining({ contextLines: 0, separator: '' }),
+      expect(resourceManager['slackNotifier'].createMessage).toHaveBeenCalledWith(
+        mockName,
+        mockNamespace,
+        mockUpdate,
+        mockChangesString,
+      );
+      expect(resourceManager['cacheManager'].update).toHaveBeenCalledWith(
+        mockName,
+        mockUpdate,
+        'mock-timestamp',
+        mockChangesString,
+        true,
       );
     });
   });
 
-  describe('isOnlyImageTagOrTagRevisionChange', () => {
-    it('should return true if the change is only in the image tag', () => {
-      const changes = { source: { helm: { valuesObject: { image: { tag: 'v1.0.1' } } } } };
-      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(true);
-    });
+  describe('updateExistingDeployment', () => {
+    it('should update the existing Slack message and update the cache', async () => {
+      const mockName = 'test-app';
+      const mockNamespace = 'test-namespace';
+      const mockUpdate = {
+        status: ArgoCdHealthStatus.Healthy,
+        sync: ArgoCdSyncStatus.Synced,
+        spec: { source: { repoURL: 'https://example.com/repo.git' } },
+      };
+      const mockChangesString = 'Generated changes';
+      const mockCachedResource = {
+        status: ArgoCdHealthStatus.Progressing,
+        sync: ArgoCdSyncStatus.OutOfSync,
+        spec: { source: { repoURL: 'https://example.com/repo.git' } },
+        deploymentInProgress: true,
+        persistentChanges: 'Existing changes',
+        lastMessageTs: 'mock-timestamp',
+      };
+      const mockSlackResponse = { ts: 'mock-timestamp-updated' };
+      const mockUpdatedChanges = 'Merged changes';
+      const mockDeploymentInProgress = false;
 
-    it('should return true if the change is only in the target revision', () => {
-      const changes = { source: { targetRevision: 'v1.0.1' } };
-      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(true);
-    });
+      vi.spyOn(resourceManager['cacheManager'], 'get').mockReturnValueOnce(
+        mockCachedResource as CacheEntry | undefined,
+      );
+      vi.spyOn(resourceManager['changeDetector'], 'mergeChanges').mockReturnValueOnce(mockUpdatedChanges);
+      vi.spyOn(resourceManager['slackNotifier'], 'updateMessage').mockResolvedValueOnce(
+        mockSlackResponse as Awaited<ReturnType<(typeof resourceManager)['slackNotifier']['updateMessage']>>,
+      );
+      vi.spyOn(resourceManager['changeDetector'], 'isDeploymentInProgress').mockReturnValueOnce(
+        mockDeploymentInProgress,
+      );
+      vi.spyOn(resourceManager['cacheManager'], 'update').mockReturnValue();
 
-    it('should return false if there are other changes in the source', () => {
-      const changes = { source: { repoURL: 'https://example.com/new-repo.git' } };
-      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(false);
-    });
+      await resourceManager.testUpdateExistingDeployment(
+        mockName,
+        mockNamespace,
+        mockUpdate as ResourceUpdate,
+        mockChangesString,
+      );
 
-    it('should return false if there are multiple changes in the source', () => {
-      const changes = { source: { targetRevision: 'v1.0.1', repoURL: 'https://example.com/new-repo.git' } };
-      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(false);
-    });
-
-    it('should return false if there are changes outside the source', () => {
-      const changes = { destination: { namespace: 'new-namespace' } };
-      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(false);
-    });
-
-    it('should return false if there are multiple changes including the source', () => {
-      const changes = { source: { targetRevision: 'v1.0.1' }, destination: { namespace: 'new-namespace' } };
-      expect(resourceManager['isOnlyImageTagOrTagRevisionChange'](changes)).toBe(false);
+      expect(resourceManager['changeDetector'].mergeChanges).toHaveBeenCalledWith(
+        mockCachedResource.persistentChanges,
+        mockChangesString,
+      );
+      expect(resourceManager['slackNotifier'].updateMessage).toHaveBeenCalledWith(
+        mockName,
+        mockNamespace,
+        mockUpdate,
+        mockUpdatedChanges,
+        mockCachedResource.lastMessageTs,
+      );
+      expect(resourceManager['cacheManager'].update).toHaveBeenCalledWith(
+        mockName,
+        mockUpdate,
+        'mock-timestamp-updated',
+        mockUpdatedChanges,
+        mockDeploymentInProgress,
+      );
     });
   });
 });

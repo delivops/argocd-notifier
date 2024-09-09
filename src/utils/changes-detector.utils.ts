@@ -72,7 +72,33 @@ export class ChangeDetector {
     return diffString.trim();
   }
 
-  private isOnlyImageTagOrTagRevisionChange(changesObjectSpec: Record<string, unknown>): boolean {
+  public generateChangesObject(
+    cacheSpec: ArgoCdApplicationSpec,
+    updateSpec: ArgoCdApplicationSpec,
+  ): Record<string, unknown> {
+    const reorganizeSpec = (spec: ArgoCdApplicationSpec) => {
+      const { syncPolicy: _, source, ...restSpec } = spec;
+      const { repoURL, targetRevision, chart, helm, ...restSource } = source;
+
+      return {
+        source: {
+          repoURL,
+          targetRevision,
+          chart,
+          helm,
+          ...restSource,
+        },
+        ...restSpec,
+      };
+    };
+
+    const cacheObjectSpec = reorganizeSpec(cacheSpec);
+    const updateObjectSpec = reorganizeSpec(updateSpec);
+
+    return filterChanges(updateObjectSpec, cacheObjectSpec);
+  }
+
+  public isOnlyImageTagOrTagRevisionChange(changesObjectSpec: Record<string, unknown>): boolean {
     const changedPaths = Object.keys(changesObjectSpec);
 
     if (changedPaths.length !== 1 || changedPaths[0] !== 'source') return false;
