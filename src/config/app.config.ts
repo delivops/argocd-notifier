@@ -18,7 +18,7 @@ export const slack_config = {
 
 export const app_config = {
   contextDiffLinesCount: env.get('CONTEXT_DIFF_LINES_COUNT').default('2').asIntPositive(),
-  IGNORE_VERSION_CHANGE: env.get('IGNORE_VERSION_CHANGE').default('false').asBool(),
+  // ignoreVersionChange: env.get('IGNORE_VERSION_CHANGE').default('false').asBool(),
 } as const;
 
 // // === additional validation ===
