@@ -99,7 +99,7 @@ __metadata:
     "@vitest/coverage-v8": "npm:^2.0.5"
     coverage-badges-cli: "npm:^2.0.0"
     croner: "npm:^8.1.1"
-    diff: "npm:^6.0.0"
+    diff: "npm:^8.0.0"
     dotenv: "npm:^16.4.5"
     env-var: "npm:^7.5.0"
     eslint: "npm:^9.9.1"
@@ -1806,10 +1806,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"diff@npm:^6.0.0":
-  version: 6.0.0
-  resolution: "diff@npm:6.0.0"
-  checksum: 10c0/98d27ddd49cacf2230d5f44826d57b6440f32e89ea235b19810b19e23b94af17471ace4feabab1929a526516950e618ffa1be6b5c9b61b47991b305e31954c9c
+"diff@npm:^8.0.0":
+  version: 8.0.4
+  resolution: "diff@npm:8.0.4"
+  checksum: 10c0/7ee5d03926db4039be7252ac3b0abaae1bd122a2ca971e5ca7270e444e36ff83dd906fad1a719740ca347e97ed5dc8f458a76a8391dbcd7aff363bdafb348a00
   languageName: node
   linkType: hard
 
